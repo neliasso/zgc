@@ -29,10 +29,14 @@
 #include "opto/node.hpp"
 #include "utilities/growableArray.hpp"
 
+// Type bits - keep then intact
 const uint8_t ZBarrierStrong             = 1;
 const uint8_t ZBarrierWeak               = 2;
 const uint8_t ZBarrierPhantom            = 4;
 const uint8_t ZBarrierNoKeepalive        = 8;
+// Mask for type bits
+const uint8_t ZBarrierTypeMask           = 0xf;
+// Elision bit
 const uint8_t ZBarrierElided             = 16;
 
 class Block;

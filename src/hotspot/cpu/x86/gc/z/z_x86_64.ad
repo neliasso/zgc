@@ -69,7 +69,7 @@ static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address 
   }
 
   z_uncolor(_masm, node, ref);
-  if (node->barrier_data() == ZBarrierElided) {
+  if ((node->barrier_data() & ZBarrierElided) != 0) {
     return;
   }
   ZLoadBarrierStubC2* const stub = ZLoadBarrierStubC2::create(node, ref_addr, ref);
@@ -79,9 +79,8 @@ static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address 
 }
 
 static void z_store_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register rnew_zaddress, Register rnew_zpointer, bool is_atomic) {
-  if (node->barrier_data() == ZBarrierElided) {
+  if ((node->barrier_data() & ZBarrierElided) != 0) {
     if (rnew_zaddress != noreg) {
-      // noreg means null; no need to color
       __ movptr(rnew_zpointer, rnew_zaddress);
       z_color(_masm, node, rnew_zpointer);
     }
