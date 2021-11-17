@@ -131,6 +131,7 @@ public:
 
   uint8_t barrier_data() const        { return _barrier_data; }
   void set_barrier_data(uint8_t data) { _barrier_data = data; }
+  void add_barrier_data(uint8_t data) { _barrier_data |= data; }
 
   void set_raw_access(Node* raw_access) { _raw_access = raw_access; }
   virtual void set_memory() {} // no-op for normal accesses, but not for atomic accesses.
