@@ -38,6 +38,8 @@ const uint8_t ZBarrierNoKeepalive        = 8;
 const uint8_t ZBarrierTypeMask           = 0xf;
 // Elision bit
 const uint8_t ZBarrierElided             = 16;
+// Elision type bits - inclusive with ZBarrierElided
+const uint8_t ZBarrierDomElided          = 32;
 
 class Block;
 class MachNode;
@@ -136,6 +138,9 @@ public:
   virtual void emit_stubs(CodeBuffer& cb) const;
   virtual void eliminate_gc_barrier(PhaseMacroExpand* macro, Node* node) const;
   virtual void eliminate_gc_barrier_data(Node* node) const;
+
+  virtual void print_stats() const;
+  virtual void gather_stats() const;
 };
 
 #endif // SHARE_GC_Z_C2_ZBARRIERSETC2_HPP

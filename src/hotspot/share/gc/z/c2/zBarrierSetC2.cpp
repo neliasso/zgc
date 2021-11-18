@@ -576,7 +576,7 @@ static bool is_allocation(const Node* node) {
 }
 
 static void elide_mach_barrier(MachNode* mach) {
-  mach->add_barrier_data(ZBarrierElided);
+  mach->add_barrier_data(ZBarrierElided | ZBarrierDomElided);
 }
 
 void ZBarrierSetC2::analyze_dominating_barriers_impl(Node_List& accesses, Node_List& access_dominators) const {
@@ -824,5 +824,103 @@ void ZBarrierSetC2::eliminate_gc_barrier_data(Node* node) const {
   } else if (node->is_LoadStore()) {
     LoadStoreNode* loadstore = node->as_LoadStore();
     loadstore->add_barrier_data(ZBarrierElided);
+  }
+}
+
+enum {
+  LOAD_COUNTER,
+  STORE_COUNTER,
+  ATOMIC_COUNTER,
+  NO_COUNTER
+};
+
+const char* presentation_names[] = {
+  "Loads",
+  "Stores",
+  "Atomics",
+};
+
+struct elision_counter_struct {
+  unsigned int barrier_strong;
+  unsigned int barrier_weak;
+  unsigned int barrier_phantom;
+  unsigned int barrier_nokeepalive;
+  unsigned int barrier_elided;
+  unsigned int barrier_dom_elided;
+};
+
+static elision_counter_struct _elision_counter[3] = {};
+
+void ZBarrierSetC2::gather_stats() const {
+  if (PrintBarrierSetStatistics) {
+    Compile* const C = Compile::current();
+    PhaseCFG* const cfg = C->cfg();
+
+    for (uint i = 0; i < cfg->number_of_blocks(); ++i) {
+      const Block* const block = cfg->get_block(i);
+      for (uint j = 0; j < block->number_of_nodes(); ++j) {
+        Node* const node = block->get_node(j);
+        if (!node->is_Mach()) {
+          continue;
+        }
+        MachNode* const mach = node->as_Mach();
+        uint type;
+        switch (mach->ideal_Opcode()) {
+          case Op_LoadP:
+            type = LOAD_COUNTER;
+            break;
+          case Op_StoreP:
+            type = STORE_COUNTER;
+            break;
+          case Op_CompareAndExchangeP:
+          case Op_CompareAndSwapP:
+          case Op_GetAndSetP:
+            type = ATOMIC_COUNTER;
+            break;
+          default:
+            type = NO_COUNTER;
+            continue;
+        }
+
+        assert(type != NO_COUNTER, "check");
+        uint8_t data = mach->barrier_data();
+        if (data != 0) {
+          if (data & ZBarrierStrong) {
+            _elision_counter[type].barrier_strong++;
+          }
+          if (data & ZBarrierWeak) {
+            _elision_counter[type].barrier_weak++;
+          }
+          if (data & ZBarrierPhantom) {
+            _elision_counter[type].barrier_phantom++;
+          }
+          if (data & ZBarrierNoKeepalive) {
+            _elision_counter[type].barrier_nokeepalive++;
+          }
+          if (data & ZBarrierElided) {
+            _elision_counter[type].barrier_elided++;
+          }
+          if (data & ZBarrierDomElided) {
+            _elision_counter[type].barrier_dom_elided++;
+            assert(data & ZBarrierElided, "inclusive");
+          }
+        }
+      }
+    }
+  }
+}
+
+void ZBarrierSetC2::print_stats() const {
+  for (int i = 0; i <= ATOMIC_COUNTER; i++) {
+    tty->print_cr("%s -----------------------------------", presentation_names[i]);
+    tty->print("strong: %i  ", _elision_counter[i].barrier_strong);
+    tty->print("weak: %i  ", _elision_counter[i].barrier_weak);
+    tty->print("phantom: %i  ", _elision_counter[i].barrier_phantom);
+    tty->print("nokeepalive: %i", _elision_counter[i].barrier_nokeepalive);
+    tty->cr();
+    tty->print_cr("total elided: %i", _elision_counter[i].barrier_elided);
+    unsigned int triv_elided = _elision_counter[i].barrier_elided - _elision_counter[i].barrier_dom_elided;
+    tty->print_cr("- triv. elided: %i", triv_elided);
+    tty->print_cr("- dom elided:   %i", _elision_counter[i].barrier_dom_elided);
   }
 }
