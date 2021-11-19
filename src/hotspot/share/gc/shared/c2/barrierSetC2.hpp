@@ -302,7 +302,8 @@ public:
   virtual bool matcher_is_store_load_barrier(Node* x, uint xop) const { return false; }
 
   virtual void late_barrier_analysis() const { }
-  virtual int estimate_stub_size() const { return 0; }
+  virtual int  estimate_stub_size() const { return 0; }
+  virtual int  estimate_mach_node_size(MachNode* mach) const { return 0; }
   virtual void emit_stubs(CodeBuffer& cb) const { }
 
   static int arraycopy_payload_base_offset(bool is_array);

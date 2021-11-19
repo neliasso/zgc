@@ -318,6 +318,13 @@ int ZBarrierSetC2::estimate_stub_size() const {
   return size;
 }
 
+int ZBarrierSetC2::estimate_mach_node_size(MachNode* mach) const {
+  if (ZVerifyElidedBarriers && (mach->ideal_Opcode() == Op_StoreP) || (mach->ideal_Opcode() == Op_LoadP)) {
+    return 64;
+  }
+  return 0;
+}
+
 static void set_barrier_data(C2Access& access) {
   if (!ZBarrierSet::barrier_needed(access.decorators(), access.type())) {
     return;
@@ -818,9 +825,12 @@ void ZBarrierSetC2::eliminate_gc_barrier(PhaseMacroExpand* macro, Node* node) co
 }
 
 void ZBarrierSetC2::eliminate_gc_barrier_data(Node* node) const {
+
   if (node->is_Mem()) {
     MemNode* mem = node->as_Mem();
-    mem->add_barrier_data(ZBarrierElided);
+    if ((node->Opcode() == Op_StoreP) || (node->Opcode() == Op_LoadP)) {
+      mem->add_barrier_data(ZBarrierElided);
+    }
   } else if (node->is_LoadStore()) {
     LoadStoreNode* loadstore = node->as_LoadStore();
     loadstore->add_barrier_data(ZBarrierElided);
