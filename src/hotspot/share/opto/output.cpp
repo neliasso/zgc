@@ -509,6 +509,7 @@ void PhaseOutput::shorten_branches(uint* blk_starts) {
 
   Compile::TracePhase tp("shorten branches", &timers[_t_shortenBranches]);
 
+  BarrierSetC2* bs = BarrierSet::barrier_set()->barrier_set_c2();
   // Compute size of each block, method size, and relocation information size
   uint nblocks  = C->cfg()->number_of_blocks();
 
@@ -590,6 +591,9 @@ void PhaseOutput::shorten_branches(uint* blk_starts) {
             blk_size += nop_size;
           }
         }
+
+        blk_size += bs->estimate_mach_node_size(mach);
+
         if (mach->avoid_back_to_back(MachNode::AVOID_BEFORE)) {
           // Nop is inserted between "avoid back to back" instructions.
           // ScheduleAndBundle() can rearrange nodes in a block,
