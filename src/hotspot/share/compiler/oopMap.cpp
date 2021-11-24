@@ -174,19 +174,28 @@ void OopMap::set_narrowoop(VMReg reg) {
   set_xxx(reg, OopMapValue::narrowoop_value, VMRegImpl::Bad());
 }
 
-
-void OopMap::set_callee_saved(VMReg reg, VMReg caller_machine_register ) {
+void OopMap::set_callee_saved(VMReg reg, VMReg caller_machine_register) {
   set_xxx(reg, OopMapValue::callee_saved_value, caller_machine_register);
 }
 
-
-void OopMap::set_derived_oop(VMReg reg, VMReg derived_from_local_register ) {
-  if( reg == derived_from_local_register ) {
+void OopMap::set_derived_oop(VMReg reg, VMReg derived_from_local_register) {
+  if(reg == derived_from_local_register) {
     // Actually an oop, derived shares storage with base,
     set_oop(reg);
   } else {
     set_xxx(reg, OopMapValue::derived_oop_value, derived_from_local_register);
   }
+}
+
+void OopMap::set_indirect_oop(VMReg reg, short offset) {
+  assert(reg->value() < _locs_length, "too big reg value for stack size");
+  assert((_locs_used[reg->value()] == OopMapValue::oop_value) ||
+      (_locs_used[reg->value()] == OopMapValue::callee_saved_value),
+       "must already be in oop map");
+
+  OopMapValue o(reg, offset);
+  o.write_on(write_stream());
+  increment_count();
 }
 
 // OopMapSet
@@ -322,13 +331,15 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
     // We want coop and oop oop_types
     for (OopMapStream oms(map); !oms.is_done(); oms.next()) {
       OopMapValue omv = oms.current();
-      oop* loc = fr->oopmapreg_to_oop_location(omv.reg(),reg_map);
+      oop* loc = fr->oopmapreg_to_oop_location(omv.reg(), reg_map);
       // It should be an error if no location can be found for a
       // register mentioned as contained an oop of some kind.  Maybe
       // this was allowed previously because value_value items might
       // be missing?
       guarantee(loc != NULL, "missing saved register");
-      if ( omv.type() == OopMapValue::oop_value ) {
+      if (omv.type() == OopMapValue::oop_value) {
+        oop* loc = fr->oopmapreg_to_oop_location(omv.reg(), reg_map);
+        guarantee(loc != NULL, "missing saved register");
         void* val = *(void**)loc;
         if (val == NULL || CompressedOops::is_base(val)) {
           // Ignore NULL oops and decoded NULL narrow oops which
@@ -339,7 +350,9 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
           continue;
         }
         oop_fn->do_oop(loc);
-      } else if ( omv.type() == OopMapValue::narrowoop_value ) {
+      } else if (omv.type() == OopMapValue::narrowoop_value) {
+        oop* loc = fr->oopmapreg_to_oop_location(omv.reg(), reg_map);
+        guarantee(loc != NULL, "missing saved register");
         narrowOop *nl = (narrowOop*)loc;
 #ifndef VM_LITTLE_ENDIAN
         VMReg vmReg = omv.reg();
@@ -351,6 +364,8 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
         }
 #endif
         oop_fn->do_oop(nl);
+      } else if (omv.type() == OopMapValue::indirect_oop) {
+        ShouldNotReachHere(); // TODO
       }
     }
   }
@@ -370,7 +385,7 @@ void OopMapSet::update_register_map(const frame *fr, RegisterMap *reg_map) {
 
   // Check if caller must update oop argument
   assert((reg_map->include_argument_oops() ||
-          !cb->caller_must_gc_arguments(reg_map->thread())),
+         !cb->caller_must_gc_arguments(reg_map->thread())),
          "include_argument_oops should already be set");
 
   // Scan through oopmap and find location of all callee-saved registers
@@ -416,7 +431,11 @@ void print_register_type(OopMapValue::oop_types x, VMReg optional,
     optional->print_on(st);
     break;
   case OopMapValue::derived_oop_value:
-    st->print("Derived_oop_");
+    st->print("Derived_oop");
+    optional->print_on(st);
+    break;
+  case OopMapValue::indirect_oop:
+    st->print("Indirect_");
     optional->print_on(st);
     break;
   default:
@@ -425,8 +444,12 @@ void print_register_type(OopMapValue::oop_types x, VMReg optional,
 }
 
 void OopMapValue::print_on(outputStream* st) const {
-  reg()->print_on(st);
-  st->print("=");
+  if (type() != indirect_oop) {
+    reg()->print_on(st);
+    st->print("=");
+  } else {
+    st->print("=(%i)", reg_as_offset());
+  }
   print_register_type(type(),content_reg(),st);
   st->print(" ");
 }
