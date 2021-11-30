@@ -340,6 +340,9 @@ public:
   // Passing TYPE_PTR_SENTINAL as adr_type asks for computation of the adr_type if possible
   const Node* get_base_and_disp(intptr_t &offset, const TypePtr* &adr_type) const;
 
+  // A convenience wrapper of get_base_and_disp
+  const Node* get_base_and_offset(intptr_t& offset);
+
   // Helper for get_base_and_disp: find the base and index input nodes.
   // Returns the MachOper as determined by memory_operand(), for use, if
   // needed by the caller. If (MachOper *)-1 is returned, base and index
@@ -826,11 +829,11 @@ public:
 };
 
 class BarrierRecord {
+public:
   MachNode* _access;
   Node*     _mem;
   DEBUG_ONLY(Node* _dom_access);
 
-public:
   BarrierRecord(MachNode* access, Node* mem DEBUG_ONLY(COMMA Node* dom_access)) :
     _access(access), _mem(mem) DEBUG_ONLY(COMMA _dom_access(dom_access)) {
   }
@@ -857,8 +860,24 @@ public:
     Arena* arena = Compile::current()->comp_arena();
     if (_barrier_records == NULL) {
       _barrier_records = new (arena) GrowableArray<BarrierRecord*>(arena, 4,  0, 0);
+      _barrier_records->push(new (arena) BarrierRecord(access, mem DEBUG_ONLY(COMMA dom_access)));
     }
-    BarrierRecord* r = new (arena) BarrierRecord(access, mem, dom_access);
+
+    // Check for duplicates before adding new record
+    for (GrowableArrayIterator<BarrierRecord*> it = _barrier_records->begin(); it != _barrier_records->end(); ++it) {
+      BarrierRecord* br = *it;
+      if (br->_mem == mem) {
+        intptr_t offset1, offset2;
+        access->get_base_and_offset(offset1);
+        br->_access->get_base_and_offset(offset2);
+        if (offset1 == offset2) {
+          // Found dupe - exit
+          return;
+        }
+      }
+    }
+
+    BarrierRecord* r = new (arena) BarrierRecord(access, mem DEBUG_ONLY(COMMA dom_access));
     _barrier_records->push(r);
   }
 
