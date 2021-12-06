@@ -41,6 +41,7 @@ const uint8_t ZBarrierElided             = 16;
 // Elision type bits - inclusive with ZBarrierElided
 const uint8_t ZBarrierDomElided          = 32;
 const uint8_t ZBarrierSABElided          = 64;
+const uint8_t ZBarrierSABBailout         = 128;
 
 class Block;
 class MachNode;
@@ -103,10 +104,22 @@ public:
   virtual void emit_code(MacroAssembler& masm);
 };
 
+class SafepointAccessRecord : public ResourceObj {
+public:
+  MachSafePointNode* _msfp;
+  Node*              _mem;
+
+  SafepointAccessRecord(MachSafePointNode* msfp, Node* mem) :
+    _msfp(msfp), _mem(mem) {
+  }
+};
+
 class ZBarrierSetC2 : public BarrierSetC2 {
+
 private:
   void compute_liveness_at_stubs() const;
   void analyze_dominating_barriers_impl(Node_List& accesses, Node_List& access_dominators) const;
+  void analyze_dominating_barriers_impl_inner(Block* dom_block, Node* dom_access, Node* const access, const Node* def_mem, GrowableArray<SafepointAccessRecord*>& access_list) const;
   void analyze_dominating_barriers() const;
 
 protected:
@@ -143,6 +156,12 @@ public:
 
   virtual void print_stats() const;
   virtual void gather_stats() const;
+
+  void mark_mach_barrier_dom_elided(MachNode* mach) const;
+  void mark_mach_barrier_sab_elided(MachNode* mach) const;
+  void mark_mach_barrier_sab_bailout(MachNode* mach) const;
+  void record_safepoint_attached_barrier(MachNode* const access, Node* mem, MachSafePointNode* sfp DEBUG_ONLY(COMMA Node* dom_access)) const;
+  void process_access(MachNode* const access, Node* dom_access, GrowableArray<SafepointAccessRecord*>& access_list, intptr_t access_offset) const;
 };
 
 #endif // SHARE_GC_Z_C2_ZBARRIERSETC2_HPP
