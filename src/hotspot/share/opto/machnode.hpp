@@ -828,7 +828,7 @@ public:
   virtual const TypePtr *adr_type() const;
 };
 
-class BarrierRecord {
+class BarrierRecord : public ResourceObj {
 public:
   MachNode* _access;
   Node*     _mem;
@@ -861,6 +861,7 @@ public:
     if (_barrier_records == NULL) {
       _barrier_records = new (arena) GrowableArray<BarrierRecord*>(arena, 4,  0, 0);
       _barrier_records->push(new (arena) BarrierRecord(access, mem DEBUG_ONLY(COMMA dom_access)));
+      return;
     }
 
     // Check for duplicates before adding new record
