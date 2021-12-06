@@ -338,7 +338,6 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
       // register mentioned as contained an oop of some kind.  Maybe
       // this was allowed previously because value_value items might
       // be missing?
-      guarantee(loc != NULL, "missing saved register");
       if (omv.type() == OopMapValue::oop_value) {
         oop* loc = fr->oopmapreg_to_oop_location(omv.reg(), reg_map);
         guarantee(loc != NULL, "missing saved register");
@@ -366,10 +365,10 @@ void OopMapSet::all_do(const frame *fr, const RegisterMap *reg_map,
         }
 #endif
         oop_fn->do_oop(nl);
-      } else if ( omv.type() == OopMapValue::indirect_oop ) {
+      } else if (omv.type() == OopMapValue::indirect_oop) {
         // TODO Remove GC specific handling
 
-        oop* loc = fr->oopmapreg_to_oop_location(omv.content_reg(),reg_map);
+        oop* loc = fr->oopmapreg_to_oop_location(omv.content_reg(), reg_map);
         short offset = omv.reg_as_offset();
         guarantee(loc != NULL, "missing saved register");
         guarantee(offset != 0, "Should be a reasonable offset");
