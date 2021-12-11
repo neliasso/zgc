@@ -1052,6 +1052,7 @@ struct elision_counter_struct {
   unsigned int barrier_nokeepalive;
   unsigned int barrier_elided;
   unsigned int barrier_dom_elided;
+  unsigned int barrier_sab_elided;
 };
 
 static elision_counter_struct _elision_counter[3] = {};
@@ -1109,6 +1110,10 @@ void ZBarrierSetC2::gather_stats() const {
             _elision_counter[type].barrier_dom_elided++;
             assert(data & ZBarrierElided, "inclusive");
           }
+          if (data & ZBarrierSABElided) {
+            _elision_counter[type].barrier_sab_elided++;
+            assert(data & ZBarrierElided, "inclusive");
+          }
         }
       }
     }
@@ -1127,6 +1132,7 @@ void ZBarrierSetC2::print_stats() const {
     unsigned int triv_elided = _elision_counter[i].barrier_elided - _elision_counter[i].barrier_dom_elided;
     tty->print_cr("- triv. elided: %i", triv_elided);
     tty->print_cr("- dom elided:   %i", _elision_counter[i].barrier_dom_elided);
+    tty->print_cr("- sab elided:   %i", _elision_counter[i].barrier_sab_elided);
   }
 }
 
