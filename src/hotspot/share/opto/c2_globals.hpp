@@ -111,7 +111,10 @@
                                                                             \
   notproduct(bool, PrintIdeal, false,                                       \
           "Print ideal graph before code generation")                       \
-                                                                            \
+          \
+  notproduct(bool, PrintIdeal2, false,                                      \
+          "Print ideal graph after code generation")                       \
+  \
   notproduct(uintx, PrintIdealIndentThreshold, 0,                           \
           "A depth threshold of ideal graph. Indentation is disabled "      \
           "when users attempt to dump an ideal graph deeper than it.")      \

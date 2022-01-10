@@ -1175,6 +1175,9 @@ class Compile : public Phase {
   // graph is strongly connected from root in both directions.
   void verify_graph_edges(bool no_dead_code = false) PRODUCT_RETURN;
 
+  // Dump ideal graph to tty
+  void print_ideal_impl() PRODUCT_RETURN;
+
   // End-of-run dumps.
   static void print_statistics() PRODUCT_RETURN;
 

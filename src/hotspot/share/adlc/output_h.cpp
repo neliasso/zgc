@@ -727,6 +727,9 @@ void gen_inst_format(FILE *fp, FormDict &globals, InstructForm &inst, bool for_c
     fprintf(fp,  "    if (ra->C->alias_type(adr_type())->is_volatile())\n");
     fprintf(fp,  "      st->print(\" volatile!\");\n");
     fprintf(fp,  "  }\n");
+    fprintf(fp,  "  if (barrier_data() != 0) {\n");
+    fprintf(fp,  "    st->print(\" barrier_data: %%i\", barrier_data());\n");
+    fprintf(fp,  "  }\n");
   }
 
   // Complete the definition of the format function
