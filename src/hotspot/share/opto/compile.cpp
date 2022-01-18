@@ -529,6 +529,26 @@ void Compile::print_compile_messages() {
 #endif
 }
 
+#ifndef PRODUCT
+void Compile::print_ideal_ir(const char* phase_name) {
+  ttyLocker ttyl;
+  // keep the following output all in one block
+  // This output goes directly to the tty, not the compiler log.
+  // To enable tools to match it up with the compilation activity,
+  // be sure to tag this tty output with the compile ID.
+  if (xtty != NULL) {
+    xtty->head("ideal compile_id='%d'%s compile_phase='%s'",
+               compile_id(),
+               is_osr_compilation() ? " compile_kind='osr'" : "",
+               phase_name);
+  }
+  root()->dump(9999);
+  if (xtty != NULL) {
+    xtty->tail("ideal");
+  }
+}
+#endif
+
 // ============================================================================
 //------------------------------Compile standard-------------------------------
 debug_only( int Compile::_debug_idx = 100000; )
@@ -557,7 +577,6 @@ Compile::Compile( ciEnv* ci_env, ciMethod* target, int osr_bci,
 #ifndef PRODUCT
                   _igv_idx(0),
                   _trace_opto_output(directive->TraceOptoOutputOption),
-                  _print_ideal(directive->PrintIdealOption),
 #endif
                   _has_method_handle_invokes(false),
                   _clinit_barrier_on_entry(false),
@@ -576,7 +595,7 @@ Compile::Compile( ciEnv* ci_env, ciMethod* target, int osr_bci,
                   _for_post_loop_igvn(comp_arena(), 8, 0, NULL),
                   _coarsened_locks   (comp_arena(), 8, 0, NULL),
                   _congraph(NULL),
-                  NOT_PRODUCT(_printer(NULL) COMMA)
+                  NOT_PRODUCT(_igv_printer(NULL) COMMA)
                   _dead_node_list(comp_arena()),
                   _dead_node_count(0),
                   _node_arena(mtCompiler),
@@ -758,8 +777,8 @@ Compile::Compile( ciEnv* ci_env, ciMethod* target, int osr_bci,
   set_default_node_notes(NULL);
 
 #ifndef PRODUCT
-  if (should_print(1)) {
-    _printer->print_inlining();
+  if (should_print_igv(1)) {
+    _igv_printer->print_inlining();
   }
 #endif
 
@@ -786,20 +805,8 @@ Compile::Compile( ciEnv* ci_env, ciMethod* target, int osr_bci,
   NOT_PRODUCT( verify_graph_edges(); )
 
 #ifndef PRODUCT
-  if (print_ideal()) {
-    ttyLocker ttyl;  // keep the following output all in one block
-    // This output goes directly to the tty, not the compiler log.
-    // To enable tools to match it up with the compilation activity,
-    // be sure to tag this tty output with the compile ID.
-    if (xtty != NULL) {
-      xtty->head("ideal compile_id='%d'%s", compile_id(),
-                 is_osr_compilation()    ? " compile_kind='osr'" :
-                 "");
-    }
-    root()->dump(9999);
-    if (xtty != NULL) {
-      xtty->tail("ideal");
-    }
+  if (should_print_ideal()) {
+    print_ideal_ir("print_ideal");
   }
 #endif
 
@@ -855,7 +862,6 @@ Compile::Compile( ciEnv* ci_env,
 #ifndef PRODUCT
     _igv_idx(0),
     _trace_opto_output(directive->TraceOptoOutputOption),
-    _print_ideal(directive->PrintIdealOption),
 #endif
     _has_method_handle_invokes(false),
     _clinit_barrier_on_entry(false),
@@ -867,7 +873,7 @@ Compile::Compile( ciEnv* ci_env,
     _log(ci_env->log()),
     _failure_reason(NULL),
     _congraph(NULL),
-    NOT_PRODUCT(_printer(NULL) COMMA)
+    NOT_PRODUCT(_igv_printer(NULL) COMMA)
     _dead_node_list(comp_arena()),
     _dead_node_count(0),
     _node_arena(mtCompiler),
@@ -4766,8 +4772,11 @@ void Compile::print_method_impl(CompilerPhaseType cpt, const char *name, int lev
     CompilerEvent::PhaseEvent::post(event, C->_latest_stage_start_counter, cpt, C->_compile_id, level);
   }
 #ifndef PRODUCT
-  if (should_print(level)) {
-    _printer->print_method(name, level);
+  if (should_print_igv(level)) {
+    _igv_printer->print_method(name, level);
+  }
+  if (should_print_ideal(level)) {
+    print_ideal_ir(name);
   }
 #endif
   C->_latest_stage_start_counter.stamp();
@@ -4776,8 +4785,8 @@ void Compile::print_method_impl(CompilerPhaseType cpt, const char *name, int lev
 // Only used from CompileWrapper
 void Compile::begin_method() {
 #ifndef PRODUCT
-  if (_method != NULL && should_print(1)) {
-    _printer->begin_method();
+  if (_method != NULL && should_print_igv(1)) {
+    _igv_printer->begin_method();
   }
 #endif
   C->_latest_stage_start_counter.stamp();
@@ -4791,22 +4800,22 @@ void Compile::end_method() {
   }
 
 #ifndef PRODUCT
-  if (_method != NULL && should_print(1)) {
-    _printer->end_method();
+  if (_method != NULL && should_print_igv(1)) {
+    _igv_printer->end_method();
   }
 #endif
 }
 
-bool Compile::should_print(int level) {
+bool Compile::should_print_igv(int level) {
 #ifndef PRODUCT
   if (PrintIdealGraphLevel < 0) { // disabled by the user
     return false;
   }
 
   bool need = directive()->IGVPrintLevelOption >= level;
-  if (need && _printer == nullptr) {
-    _printer = IdealGraphPrinter::printer();
-    _printer->set_compile(this);
+  if (need && !_igv_printer) {
+    _igv_printer = IdealGraphPrinter::printer();
+    _igv_printer->set_compile(this);
   }
   return need;
 #else
