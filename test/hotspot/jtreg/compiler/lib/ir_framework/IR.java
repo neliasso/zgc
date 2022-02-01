@@ -141,4 +141,6 @@ public @interface IR {
      * {@link #applyIfNot()} depending on the use case.
      */
     String[] applyIfOr() default {};
+
+    Phase phase() default Phase.AFTER_OPTIMIZATIONS;
 }
