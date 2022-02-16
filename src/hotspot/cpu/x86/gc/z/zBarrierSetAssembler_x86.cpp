@@ -1323,6 +1323,11 @@ void ZBarrierSetAssembler::generate_c2_load_barrier_stub(MacroAssembler* masm, Z
     __ call(RuntimeAddress(stub->slow_path()));
   }
 
+  // Handle elided cmps that set ZF
+  if ((stub->node()->barrier_data() & ZBarrierNullCheckRemoval) != 0) {
+    __ testptr(stub->ref(), stub->ref());
+  }
+
   // Stub exit
   __ jmp(*stub->continuation());
 }
