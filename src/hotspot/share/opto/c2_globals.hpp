@@ -776,6 +776,9 @@
                                                                             \
   product(bool, TraceBarrierElimination, false,                             \
           "Trace safepoint attached barrier optimization")                  \
+                                                                            \
+  product(bool, BarrierNullCheckElimination, true,                          \
+          "Trace safepoint attached barrier optimization")                  \
 
 // end of C2_FLAGS
 
