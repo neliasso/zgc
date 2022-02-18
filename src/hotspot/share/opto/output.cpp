@@ -349,38 +349,32 @@ void PhaseOutput::perform_peeping() {
       if (mn == nullptr) {
         continue;
       }
-      if (mn->ideal_Opcode() != Opcodes::Op_LoadP) {
-        continue;
-      }
-      if (strcmp(mn->Name(), "zLoadP") == 0) {
+
+        if (mn->rule() == MachOpcodes::zLoadP_rule) {
+        // Ensure that there are at least 2 more instructions, a machproj and a testreg
         if (j >= (block->number_of_nodes() - 2)) {
           continue; // no room
         }
+
         // Succeeded by a connected MachProj
         MachProjNode* proj = block->get_node(j + 1)->isa_MachProj();
-        if (proj == nullptr) {
+        if ((proj == nullptr) || (proj->in(0) != mn)) {
           continue;
         }
-        if (proj->in(0) != mn) {
-          continue;
-        }
-        // Succeeded by a connected test node
+
+        // Succeeded by a connected testP_reg node
         MachNode* const test = block->get_node(j + 2)->isa_Mach();
-        if (test == nullptr) {
+        if ((test == nullptr) || (test->rule() != MachOpcodes::testP_reg_rule)) {
           continue;
         }
-        if (test->ideal_Opcode() != Opcodes::Op_CmpP) {
-          continue;
-        }
-        if (strcmp(test->Name(), "testP_reg") != 0) {
-          continue;
-        }
+
+        // TODO replace with tests for matching registers
         // Must be connected to load
         if (test->in(1) != mn) {
           continue;
         }
 
-        // Note that the stub need to recreate ZF flag
+        // Record that the stub need to recreate ZF flag
         mn->add_barrier_data(ZBarrierNullCheckRemoval);
 
         // Drop node
