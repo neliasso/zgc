@@ -1045,6 +1045,7 @@ struct elision_counter_struct {
   unsigned int barrier_elided;
   unsigned int barrier_dom_elided;
   unsigned int barrier_sab_elided;
+  unsigned int barrier_triv_elided;
 };
 
 static elision_counter_struct _elision_counter[3] = {};
@@ -1101,14 +1102,16 @@ void ZBarrierSetC2::gather_stats() const {
           }
           if (data & ZBarrierElided) {
             _elision_counter[type].barrier_elided++;
-          }
-          if (data & ZBarrierDomElided) {
-            _elision_counter[type].barrier_dom_elided++;
-            assert(data & ZBarrierElided, "inclusive");
-          }
-          if (data & ZBarrierSABElided) {
-            _elision_counter[type].barrier_sab_elided++;
-            assert(data & ZBarrierElided, "inclusive");
+            if (data & ZBarrierDomElided) {
+              _elision_counter[type].barrier_dom_elided++;
+            } else if (data & ZBarrierSABElided) {
+              _elision_counter[type].barrier_sab_elided++;
+            } else {
+              _elision_counter[type].barrier_triv_elided++;
+            }
+          } else {
+            assert((data & ZBarrierDomElided) == 0, "must be inclusive with ZBarrierElided");
+            assert((data & ZBarrierSABElided) == 0, "must be inclusive with ZBarrierElided");
           }
         }
       }
@@ -1119,18 +1122,19 @@ void ZBarrierSetC2::gather_stats() const {
 void ZBarrierSetC2::print_stats() const {
   for (int i = 0; i <= ATOMIC_COUNTER; i++) {
     tty->print_cr("%s -----------------------------------", presentation_names[i]);
-    tty->print("strong: %i  ", _elision_counter[i].barrier_strong);
-    tty->print("weak: %i  ", _elision_counter[i].barrier_weak);
-    tty->print("phantom: %i  ", _elision_counter[i].barrier_phantom);
+    tty->print("strong: %i   ", _elision_counter[i].barrier_strong);
+    tty->print("weak: %i   ", _elision_counter[i].barrier_weak);
+    tty->print("phantom: %i   ", _elision_counter[i].barrier_phantom);
     tty->print("nokeepalive: %i", _elision_counter[i].barrier_nokeepalive);
     tty->cr();
-    tty->print_cr("total elided: %i", _elision_counter[i].barrier_elided);
-    unsigned int triv_elided = _elision_counter[i].barrier_elided - _elision_counter[i].barrier_dom_elided;
-    tty->print_cr("- triv. elided: %i", triv_elided);
-    tty->print_cr("- dom elided:   %i", _elision_counter[i].barrier_dom_elided);
-    tty->print_cr("- sab elided:   %i", _elision_counter[i].barrier_sab_elided);
+    tty->print_cr("total elided:   %4i (%2.1f%%)", _elision_counter[i].barrier_elided, ((float)_elision_counter[i].barrier_elided / (float)_elision_counter[i].barrier_strong * 100));
+    unsigned int triv_elided = _elision_counter[i].barrier_elided - _elision_counter[i].barrier_dom_elided - _elision_counter[i].barrier_sab_elided;
+    tty->print_cr("- triv. elided: %4i (%2.1f%%)", triv_elided, ((float)triv_elided / (float)_elision_counter[i].barrier_strong * 100));
+    tty->print_cr("- dom elided:   %4i (%2.1f%%)", _elision_counter[i].barrier_dom_elided, ((float)_elision_counter[i].barrier_dom_elided / (float)_elision_counter[i].barrier_strong * 100));
+    tty->print_cr("- sab elided:   %4i (%2.1f%%)", _elision_counter[i].barrier_sab_elided, ((float)_elision_counter[i].barrier_sab_elided / (float)_elision_counter[i].barrier_strong * 100));
     tty->cr();
   }
-  tty->print_cr("Elided zf checks after load barrier: %i", _elided_zf);
+  tty->print_cr("Null checks -----------------------------------");
+  tty->print_cr("Elided after load barrier: %i (%2.1f%%)", _elided_zf, ((float)_elided_zf / (float)_elision_counter[LOAD_COUNTER].barrier_strong * 100));
 }
 
