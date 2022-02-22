@@ -33,7 +33,7 @@ source_hpp %{
 source %{
 
 static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register ref,
-                           Register tmp, uint8_t barrier_data) {
+                           Register tmp, uint16_t barrier_data) {
   if (barrier_data == ZLoadBarrierElided) {
     return;
   }
