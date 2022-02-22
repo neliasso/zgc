@@ -1525,7 +1525,7 @@ Node* GraphKit::make_load(Node* ctl, Node* adr, const Type* t, BasicType bt,
                           bool unaligned,
                           bool mismatched,
                           bool unsafe,
-                          uint8_t barrier_data) {
+                          uint16_t barrier_data) {
   assert(adr_idx != Compile::AliasIdxTop, "use other make_load factory" );
   const TypePtr* adr_type = NULL; // debug-mode-only argument
   debug_only(adr_type = C->get_adr_type(adr_idx));

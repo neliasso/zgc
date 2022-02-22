@@ -214,7 +214,7 @@ Register ZLoadBarrierStubC2::result() const {
 }
 
 address ZLoadBarrierStubC2::slow_path() const {
-  const uint8_t barrier_data = _node->barrier_data();
+  const uint16_t barrier_data = _node->barrier_data();
   DecoratorSet decorators = DECORATORS_NONE;
   if (barrier_data & ZBarrierStrong) {
     decorators |= ON_STRONG_OOP_REF;
@@ -335,7 +335,7 @@ static void set_barrier_data(C2Access& access) {
     return;
   }
 
-  uint8_t barrier_data = 0;
+  uint16_t barrier_data = 0;
 
   if (access.decorators() & ON_PHANTOM_OOP_REF) {
     barrier_data |= ZBarrierPhantom;
@@ -1085,7 +1085,7 @@ void ZBarrierSetC2::gather_stats() const {
         }
 
         assert(type != NO_COUNTER, "check");
-        uint8_t data = mach->barrier_data();
+        uint16_t data = mach->barrier_data();
         if (data != 0) {
           if (data & ZBarrierStrong) {
             _elision_counter[type].barrier_strong++;

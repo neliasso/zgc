@@ -1,0 +1,316 @@
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   1) /*
+0c9e0c2e7fbe (Coleen Phillimore 2020-08-07 07:53:26 -0400   2)  * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   3)  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   4)  *
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   5)  * This code is free software; you can redistribute it and/or modify it
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   6)  * under the terms of the GNU General Public License version 2 only, as
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   7)  * published by the Free Software Foundation.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   8)  *
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200   9)  * This code is distributed in the hope that it will be useful, but WITHOUT
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  10)  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  11)  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  12)  * version 2 for more details (a copy is included in the LICENSE file that
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  13)  * accompanied this code).
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  14)  *
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  15)  * You should have received a copy of the GNU General Public License version
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  16)  * 2 along with this work; if not, write to the Free Software Foundation,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  17)  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  18)  *
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  19)  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  20)  * or visit www.oracle.com if you need additional information or have any
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  21)  * questions.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  22)  *
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  23)  */
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  24) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  25) #ifndef SHARE_GC_SHARED_C2_BARRIERSETC2_HPP
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  26) #define SHARE_GC_SHARED_C2_BARRIERSETC2_HPP
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  27) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  28) #include "memory/allocation.hpp"
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  29) #include "oops/accessDecorators.hpp"
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  30) #include "opto/loopnode.hpp"
+521da29e4478 (Roman Kennke      2018-11-20 22:37:34 +0100  31) #include "opto/matcher.hpp"
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  32) #include "opto/memnode.hpp"
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  33) #include "utilities/globalDefinitions.hpp"
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  34) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  35) // This means the access is mismatched. This means the value of an access
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  36) // is not equivalent to the value pointed to by the address.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  37) const DecoratorSet C2_MISMATCHED             = DECORATOR_LAST << 1;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  38) // The access may not be aligned to its natural size.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  39) const DecoratorSet C2_UNALIGNED              = DECORATOR_LAST << 2;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  40) // The atomic cmpxchg is weak, meaning that spurious false negatives are allowed,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  41) // but never false positives.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  42) const DecoratorSet C2_WEAK_CMPXCHG           = DECORATOR_LAST << 3;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  43) // This denotes that a load has control dependency.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  44) const DecoratorSet C2_CONTROL_DEPENDENT_LOAD = DECORATOR_LAST << 4;
+a42636d34b8f (Erik Österlund    2019-07-29 13:57:54 +0200  45) // This denotes that a load that must be pinned, but may float above safepoints.
+a42636d34b8f (Erik Österlund    2019-07-29 13:57:54 +0200  46) const DecoratorSet C2_UNKNOWN_CONTROL_LOAD   = DECORATOR_LAST << 5;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  47) // This denotes that the access is produced from the sun.misc.Unsafe intrinsics.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  48) const DecoratorSet C2_UNSAFE_ACCESS          = DECORATOR_LAST << 6;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  49) // This denotes that the access mutates state.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  50) const DecoratorSet C2_WRITE_ACCESS           = DECORATOR_LAST << 7;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  51) // This denotes that the access reads state.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  52) const DecoratorSet C2_READ_ACCESS            = DECORATOR_LAST << 8;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100  53) // A nearby allocation?
+c7ae2d10b7a9 (Kim Barrett       2019-03-11 02:05:07 -0400  54) const DecoratorSet C2_TIGHTLY_COUPLED_ALLOC  = DECORATOR_LAST << 9;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100  55) // Loads and stores from an arraycopy being optimized
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100  56) const DecoratorSet C2_ARRAY_COPY             = DECORATOR_LAST << 10;
+0c9e0c2e7fbe (Coleen Phillimore 2020-08-07 07:53:26 -0400  57) // Loads from immutable memory
+0c9e0c2e7fbe (Coleen Phillimore 2020-08-07 07:53:26 -0400  58) const DecoratorSet C2_IMMUTABLE_MEMORY       = DECORATOR_LAST << 11;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  59) 
+29f03ebf2cfc (Roman Kennke      2018-11-06 17:28:14 +0100  60) class Compile;
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100  61) class ConnectionGraph;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  62) class GraphKit;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  63) class IdealKit;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  64) class Node;
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100  65) class PhaseGVN;
+cd0aafe76a20 (Roland Westrelin  2018-11-27 14:49:13 +0100  66) class PhaseIdealLoop;
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100  67) class PhaseMacroExpand;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  68) class Type;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  69) class TypePtr;
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100  70) class Unique_Node_List;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  71) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  72) // This class wraps a node and a type.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  73) class C2AccessValue: public StackObj {
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  74) protected:
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  75)   Node* _node;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  76)   const Type* _type;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  77) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  78) public:
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  79)   C2AccessValue(Node* node, const Type* type) :
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  80)     _node(node),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  81)     _type(type) {}
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  82) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  83)   Node* node() const        { return _node; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  84)   const Type* type() const  { return _type; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  85) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  86)   void set_node(Node* node) { _node = node; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  87) };
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  88) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  89) // This class wraps a node and a pointer type.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  90) class C2AccessValuePtr: public C2AccessValue {
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  91) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  92) public:
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  93)   C2AccessValuePtr(Node* node, const TypePtr* type) :
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  94)     C2AccessValue(node, reinterpret_cast<const Type*>(type)) {}
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  95) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  96)   const TypePtr* type() const { return reinterpret_cast<const TypePtr*>(_type); }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  97) };
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  98) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200  99) // This class wraps a bunch of context parameters thare are passed around in the
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 100) // BarrierSetC2 backend hierarchy, for loads and stores, to reduce boiler plate.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 101) class C2Access: public StackObj {
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 102) protected:
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 103)   DecoratorSet      _decorators;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 104)   BasicType         _type;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 105)   Node*             _base;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 106)   C2AccessValuePtr& _addr;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 107)   Node*             _raw_access;
+7d84bd951dde (Nils Eliasson     2022-02-22 11:19:06 +0100 108)   uint16_t           _barrier_data;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 109) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 110)   void fixup_decorators();
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 111) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 112) public:
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 113)   C2Access(DecoratorSet decorators,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 114)            BasicType type, Node* base, C2AccessValuePtr& addr) :
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 115)     _decorators(decorators),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 116)     _type(type),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 117)     _base(base),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 118)     _addr(addr),
+8a8b35154b90 (Erik Österlund    2019-11-12 09:25:39 +0000 119)     _raw_access(NULL),
+8a8b35154b90 (Erik Österlund    2019-11-12 09:25:39 +0000 120)     _barrier_data(0)
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 121)   {}
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 122) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 123)   DecoratorSet decorators() const { return _decorators; }
+a863d40ee9c2 (Stefan Karlsson   2021-04-30 16:26:23 +0200 124)   void add_decorators(DecoratorSet decorators) { _decorators |= decorators; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 125)   Node* base() const              { return _base; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 126)   C2AccessValuePtr& addr() const  { return _addr; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 127)   BasicType type() const          { return _type; }
+0c507f31803a (Lois Foltan       2019-09-23 14:49:04 -0400 128)   bool is_oop() const             { return is_reference_type(_type); }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 129)   bool is_raw() const             { return (_decorators & AS_RAW) != 0; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 130)   Node* raw_access() const        { return _raw_access; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 131) 
+7d84bd951dde (Nils Eliasson     2022-02-22 11:19:06 +0100 132)   uint16_t barrier_data() const        { return _barrier_data; }
+7d84bd951dde (Nils Eliasson     2022-02-22 11:19:06 +0100 133)   void set_barrier_data(uint16_t data) { _barrier_data = data; }
+7d84bd951dde (Nils Eliasson     2022-02-22 11:19:06 +0100 134)   void add_barrier_data(uint16_t data) { _barrier_data |= data; }
+8a8b35154b90 (Erik Österlund    2019-11-12 09:25:39 +0000 135) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 136)   void set_raw_access(Node* raw_access) { _raw_access = raw_access; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 137)   virtual void set_memory() {} // no-op for normal accesses, but not for atomic accesses.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 138) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 139)   MemNode::MemOrd mem_node_mo() const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 140)   bool needs_cpu_membar() const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 141) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 142)   virtual PhaseGVN& gvn() const = 0;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 143)   virtual bool is_parse_access() const { return false; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 144)   virtual bool is_opt_access() const { return false; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 145) };
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 146) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 147) // C2Access for parse time calls to the BarrierSetC2 backend.
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 148) class C2ParseAccess: public C2Access {
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 149) protected:
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 150)   GraphKit*         _kit;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 151) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 152)   void* barrier_set_state() const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 153) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 154) public:
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 155)   C2ParseAccess(GraphKit* kit, DecoratorSet decorators,
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 156)                 BasicType type, Node* base, C2AccessValuePtr& addr) :
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 157)     C2Access(decorators, type, base, addr),
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 158)     _kit(kit) {
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 159)     fixup_decorators();
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 160)   }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 161) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 162)   GraphKit* kit() const           { return _kit; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 163) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 164)   virtual PhaseGVN& gvn() const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 165)   virtual bool is_parse_access() const { return true; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 166) };
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 167) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 168) // This class wraps a bunch of context parameters thare are passed around in the
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 169) // BarrierSetC2 backend hierarchy, for atomic accesses, to reduce boiler plate.
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 170) class C2AtomicParseAccess: public C2ParseAccess {
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 171)   Node* _memory;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 172)   uint  _alias_idx;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 173)   bool  _needs_pinning;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 174) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 175) public:
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 176)   C2AtomicParseAccess(GraphKit* kit, DecoratorSet decorators, BasicType type,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 177)                  Node* base, C2AccessValuePtr& addr, uint alias_idx) :
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 178)     C2ParseAccess(kit, decorators, type, base, addr),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 179)     _memory(NULL),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 180)     _alias_idx(alias_idx),
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 181)     _needs_pinning(true) {}
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 182) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 183)   // Set the memory node based on the current memory slice.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 184)   virtual void set_memory();
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 185) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 186)   Node* memory() const       { return _memory; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 187)   uint alias_idx() const     { return _alias_idx; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 188)   bool needs_pinning() const { return _needs_pinning; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 189) };
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 190) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 191) // C2Access for optimization time calls to the BarrierSetC2 backend.
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 192) class C2OptAccess: public C2Access {
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 193)   PhaseGVN& _gvn;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 194)   MergeMemNode* _mem;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 195)   Node* _ctl;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 196) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 197) public:
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 198)   C2OptAccess(PhaseGVN& gvn, Node* ctl, MergeMemNode* mem, DecoratorSet decorators,
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 199)               BasicType type, Node* base, C2AccessValuePtr& addr) :
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 200)     C2Access(decorators, type, base, addr),
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 201)     _gvn(gvn), _mem(mem), _ctl(ctl) {
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 202)     fixup_decorators();
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 203)   }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 204) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 205)   MergeMemNode* mem() const { return _mem; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 206)   Node* ctl() const { return _ctl; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 207) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 208)   virtual PhaseGVN& gvn() const { return _gvn; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 209)   virtual bool is_opt_access() const { return true; }
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 210) };
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 211) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 212) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 213) // This is the top-level class for the backend of the Access API in C2.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 214) // The top-level class is responsible for performing raw accesses. The
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 215) // various GC barrier sets inherit from the BarrierSetC2 class to sprinkle
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 216) // barriers into the accesses.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 217) class BarrierSetC2: public CHeapObj<mtGC> {
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 218) protected:
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 219)   virtual void resolve_address(C2Access& access) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 220)   virtual Node* store_at_resolved(C2Access& access, C2AccessValue& val) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 221)   virtual Node* load_at_resolved(C2Access& access, const Type* val_type) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 222) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 223)   virtual Node* atomic_cmpxchg_val_at_resolved(C2AtomicParseAccess& access, Node* expected_val,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 224)                                                Node* new_val, const Type* val_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 225)   virtual Node* atomic_cmpxchg_bool_at_resolved(C2AtomicParseAccess& access, Node* expected_val,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 226)                                                 Node* new_val, const Type* value_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 227)   virtual Node* atomic_xchg_at_resolved(C2AtomicParseAccess& access, Node* new_val, const Type* val_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 228)   virtual Node* atomic_add_at_resolved(C2AtomicParseAccess& access, Node* new_val, const Type* val_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 229)   void pin_atomic_op(C2AtomicParseAccess& access) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 230) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 231) public:
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 232)   // This is the entry-point for the backend to perform accesses through the Access API.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 233)   virtual Node* store_at(C2Access& access, C2AccessValue& val) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 234)   virtual Node* load_at(C2Access& access, const Type* val_type) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 235) 
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 236)   virtual Node* atomic_cmpxchg_val_at(C2AtomicParseAccess& access, Node* expected_val,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 237)                                       Node* new_val, const Type* val_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 238)   virtual Node* atomic_cmpxchg_bool_at(C2AtomicParseAccess& access, Node* expected_val,
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 239)                                        Node* new_val, const Type* val_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 240)   virtual Node* atomic_xchg_at(C2AtomicParseAccess& access, Node* new_val, const Type* value_type) const;
+8ab8d455526e (Roland Westrelin  2018-11-06 10:01:27 +0100 241)   virtual Node* atomic_add_at(C2AtomicParseAccess& access, Node* new_val, const Type* value_type) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 242) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 243)   virtual void clone(GraphKit* kit, Node* src, Node* dst, Node* size, bool is_array) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 244) 
+001c5142a6ff (Yi Yang           2021-05-03 14:22:26 +0000 245)   virtual Node* obj_allocate(PhaseMacroExpand* macro, Node* mem, Node* toobig_false, Node* size_in_bytes,
+8ce9db9ed542 (Roman Kennke      2018-09-19 21:31:33 +0200 246)                              Node*& i_o, Node*& needgc_ctrl,
+8ce9db9ed542 (Roman Kennke      2018-09-19 21:31:33 +0200 247)                              Node*& fast_oop_ctrl, Node*& fast_oop_rawmem,
+8ce9db9ed542 (Roman Kennke      2018-09-19 21:31:33 +0200 248)                              intx prefetch_lines) const;
+8ce9db9ed542 (Roman Kennke      2018-09-19 21:31:33 +0200 249) 
+9ba72c0c2c97 (Roman Kennke      2018-11-06 23:03:05 +0100 250)   virtual Node* ideal_node(PhaseGVN* phase, Node* n, bool can_reshape) const { return NULL; }
+9ba72c0c2c97 (Roman Kennke      2018-11-06 23:03:05 +0100 251) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 252)   // These are general helper methods used by C2
+ce59b4b472dd (Roland Westrelin  2018-09-28 10:42:40 +0200 253)   enum ArrayCopyPhase {
+ce59b4b472dd (Roland Westrelin  2018-09-28 10:42:40 +0200 254)     Parsing,
+ce59b4b472dd (Roland Westrelin  2018-09-28 10:42:40 +0200 255)     Optimization,
+ce59b4b472dd (Roland Westrelin  2018-09-28 10:42:40 +0200 256)     Expansion
+ce59b4b472dd (Roland Westrelin  2018-09-28 10:42:40 +0200 257)   };
+75e9d0a2901c (Nils Eliasson     2019-02-14 14:54:05 +0100 258) 
+bba3728e2388 (Nils Eliasson     2021-06-02 09:02:37 +0000 259)   virtual bool array_copy_requires_gc_barriers(bool tightly_coupled_alloc, BasicType type, bool is_clone, bool is_clone_instance, ArrayCopyPhase phase) const { return false; }
+5eb643144be5 (Roman Kennke      2019-09-18 20:56:18 +0200 260)   virtual void clone_at_expansion(PhaseMacroExpand* phase, ArrayCopyNode* ac) const;
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 261) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 262)   // Support for GC barriers emitted during parsing
+42885307f6e5 (Erik Österlund    2019-10-09 12:30:06 +0000 263)   virtual bool has_load_barrier_nodes() const { return false; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 264)   virtual bool is_gc_barrier_node(Node* node) const { return false; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 265)   virtual Node* step_over_gc_barrier(Node* c) const { return c; }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 266) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 267)   // Support for macro expanded GC barriers
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 268)   virtual void register_potential_barrier_node(Node* node) const { }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 269)   virtual void unregister_potential_barrier_node(Node* node) const { }
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 270)   virtual void eliminate_gc_barrier(PhaseMacroExpand* macro, Node* node) const { }
+a863d40ee9c2 (Stefan Karlsson   2021-04-30 16:26:23 +0200 271)   virtual void eliminate_gc_barrier_data(Node* node) const { }
+b4c401fa37a0 (Roland Westrelin  2018-10-17 10:19:13 +0200 272)   virtual void enqueue_useful_gc_barrier(PhaseIterGVN* igvn, Node* node) const {}
+b4c401fa37a0 (Roland Westrelin  2018-10-17 10:19:13 +0200 273)   virtual void eliminate_useless_gc_barriers(Unique_Node_List &useful, Compile* C) const {}
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 274) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 275)   // Allow barrier sets to have shared state that is preserved across a compilation unit.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 276)   // This could for example comprise macro nodes to be expanded during macro expansion.
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 277)   virtual void* create_barrier_state(Arena* comp_arena) const { return NULL; }
+8849b1c7b7d8 (Roland Westrelin  2018-11-27 09:35:02 +0100 278)   // If the BarrierSetC2 state has barrier nodes in its compilation
+8849b1c7b7d8 (Roland Westrelin  2018-11-27 09:35:02 +0100 279)   // unit state to be expanded later, then now is the time to do so.
+8849b1c7b7d8 (Roland Westrelin  2018-11-27 09:35:02 +0100 280)   virtual bool expand_barriers(Compile* C, PhaseIterGVN& igvn) const { return false; }
+8849b1c7b7d8 (Roland Westrelin  2018-11-27 09:35:02 +0100 281)   virtual bool optimize_loops(PhaseIdealLoop* phase, LoopOptsMode mode, VectorSet& visited, Node_Stack& nstack, Node_List& worklist) const { return false; }
+8849b1c7b7d8 (Roland Westrelin  2018-11-27 09:35:02 +0100 282)   virtual bool strip_mined_loops_expanded(LoopOptsMode mode) const { return false; }
+8849b1c7b7d8 (Roland Westrelin  2018-11-27 09:35:02 +0100 283)   virtual bool is_gc_specific_loop_opts_pass(LoopOptsMode mode) const { return false; }
+29f03ebf2cfc (Roman Kennke      2018-11-06 17:28:14 +0100 284) 
+29f03ebf2cfc (Roman Kennke      2018-11-06 17:28:14 +0100 285)   enum CompilePhase {
+75e9d0a2901c (Nils Eliasson     2019-02-14 14:54:05 +0100 286)     BeforeOptimize,
+75e9d0a2901c (Nils Eliasson     2019-02-14 14:54:05 +0100 287)     BeforeMacroExpand,
+29f03ebf2cfc (Roman Kennke      2018-11-06 17:28:14 +0100 288)     BeforeCodeGen
+29f03ebf2cfc (Roman Kennke      2018-11-06 17:28:14 +0100 289)   };
+bb792b033784 (Roman Kennke      2018-11-07 20:21:35 +0100 290) 
+bb792b033784 (Roman Kennke      2018-11-07 20:21:35 +0100 291) #ifdef ASSERT
+75e9d0a2901c (Nils Eliasson     2019-02-14 14:54:05 +0100 292)   virtual void verify_gc_barriers(Compile* compile, CompilePhase phase) const {}
+bb792b033784 (Roman Kennke      2018-11-07 20:21:35 +0100 293) #endif
+9e754390c632 (Roman Kennke      2018-11-09 10:38:07 +0100 294) 
+9e754390c632 (Roman Kennke      2018-11-09 10:38:07 +0100 295)   virtual bool final_graph_reshaping(Compile* compile, Node* n, uint opcode) const { return false; }
+9e754390c632 (Roman Kennke      2018-11-09 10:38:07 +0100 296) 
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100 297)   virtual bool escape_add_to_con_graph(ConnectionGraph* conn_graph, PhaseGVN* gvn, Unique_Node_List* delayed_worklist, Node* n, uint opcode) const { return false; }
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100 298)   virtual bool escape_add_final_edges(ConnectionGraph* conn_graph, PhaseGVN* gvn, Node* n, uint opcode) const { return false; }
+acc32136c3ce (Roman Kennke      2018-11-15 10:59:56 +0100 299)   virtual bool escape_has_out_with_unsafe_object(Node* n) const { return false; }
+521da29e4478 (Roman Kennke      2018-11-20 22:37:34 +0100 300) 
+521da29e4478 (Roman Kennke      2018-11-20 22:37:34 +0100 301)   virtual bool matcher_find_shared_post_visit(Matcher* matcher, Node* n, uint opcode) const { return false; };
+521da29e4478 (Roman Kennke      2018-11-20 22:37:34 +0100 302)   virtual bool matcher_is_store_load_barrier(Node* x, uint xop) const { return false; }
+4b528df402c0 (Roman Kennke      2018-11-22 09:22:54 +0100 303) 
+42885307f6e5 (Erik Österlund    2019-10-09 12:30:06 +0000 304)   virtual void late_barrier_analysis() const { }
+40e85ea300a9 (Nils Eliasson     2021-11-19 20:25:07 +0100 305)   virtual int  estimate_stub_size() const { return 0; }
+40e85ea300a9 (Nils Eliasson     2021-11-19 20:25:07 +0100 306)   virtual int  estimate_mach_node_size(MachNode* mach) const { return 0; }
+42885307f6e5 (Erik Österlund    2019-10-09 12:30:06 +0000 307)   virtual void emit_stubs(CodeBuffer& cb) const { }
+6230791e9ef5 (Nils Eliasson     2019-11-29 11:26:25 +0100 308) 
+6230791e9ef5 (Nils Eliasson     2019-11-29 11:26:25 +0100 309)   static int arraycopy_payload_base_offset(bool is_array);
+80ae8919c11f (Nils Eliasson     2021-11-17 18:10:26 +0100 310) 
+80ae8919c11f (Nils Eliasson     2021-11-17 18:10:26 +0100 311)   virtual void print_stats()  const { tty->print_cr("--- No C2BarrierSet stats ---"); };
+80ae8919c11f (Nils Eliasson     2021-11-17 18:10:26 +0100 312)   virtual void gather_stats() const { };
+7467f0ba15c7 (Nils Eliasson     2022-02-16 16:29:52 +0100 313) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 314) };
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 315) 
+53ec88908cc5 (Erik Österlund    2018-05-18 14:51:06 +0200 316) #endif // SHARE_GC_SHARED_C2_BARRIERSETC2_HPP
