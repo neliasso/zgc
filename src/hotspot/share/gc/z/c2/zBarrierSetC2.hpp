@@ -30,18 +30,18 @@
 #include "utilities/growableArray.hpp"
 
 // Type bits - keep then intact
-const uint8_t ZBarrierStrong             = 1;
-const uint8_t ZBarrierWeak               = 2;
-const uint8_t ZBarrierPhantom            = 4;
-const uint8_t ZBarrierNoKeepalive        = 8;
+const uint16_t ZBarrierStrong             = 1;
+const uint16_t ZBarrierWeak               = 2;
+const uint16_t ZBarrierPhantom            = 4;
+const uint16_t ZBarrierNoKeepalive        = 8;
 // Mask for type bits
-const uint8_t ZBarrierTypeMask           = 0xf;
+const uint16_t ZBarrierTypeMask           = 0xf;
 // Elision bit
-const uint8_t ZBarrierElided             = 16;
+const uint16_t ZBarrierElided             = 16;
 // Elision type bits - inclusive with ZBarrierElided
-const uint8_t ZBarrierDomElided          = 32;
-const uint8_t ZBarrierSABElided          = 64;
-const uint8_t ZBarrierNullCheckRemoval   = 128;
+const uint16_t ZBarrierDomElided          = 32;
+const uint16_t ZBarrierSABElided          = 64;
+const uint16_t ZBarrierNullCheckRemoval   = 128;
 
 
 class Block;

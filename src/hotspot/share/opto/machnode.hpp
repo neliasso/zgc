@@ -219,9 +219,9 @@ public:
   // no constant base node input.
   virtual uint mach_constant_base_node_input() const { return (uint)-1; }
 
-  uint8_t barrier_data() const { return _barrier; }
-  void set_barrier_data(uint8_t data) { _barrier = data; }
-  void add_barrier_data(uint8_t data) { _barrier |= data; }
+  uint16_t barrier_data() const { return _barrier; }
+  void set_barrier_data(uint16_t data) { _barrier = data; }
+  void add_barrier_data(uint16_t data) { _barrier |= data; }
 
   // Copy inputs and operands to new node of instruction.
   // Called from cisc_version() and short_branch_version().
@@ -269,7 +269,7 @@ public:
   virtual uint two_adr( ) const { return 0; }
 
   // The GC might require some barrier metadata for machine code emission.
-  uint8_t _barrier;
+  uint16_t _barrier;
 
   // Array of complex operand pointers.  Each corresponds to zero or
   // more leafs.  Must be set by MachNode constructor to point to an
