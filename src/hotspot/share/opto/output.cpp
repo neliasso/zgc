@@ -333,7 +333,7 @@ void PhaseOutput::perform_mach_node_analysis() {
 
   pd_perform_mach_node_analysis();
 
-  if (UseZGC) {
+  if (UseZGC && BarrierNullCheckElimination) {
     perform_peeping();
   }
 }
@@ -369,6 +369,7 @@ void PhaseOutput::perform_peeping() {
         }
 
         // TODO replace with tests for matching registers
+        // TODO - allow instructions in between - how common?
         // Must be connected to load
         if (test->in(1) != mn) {
           continue;
@@ -379,7 +380,7 @@ void PhaseOutput::perform_peeping() {
 
         // Drop node
         assert(block->find_node(test) == (j + 2), "check");
-        block->remove_node(j+1);
+        block->remove_node(j + 2);
       }
     }
   }
