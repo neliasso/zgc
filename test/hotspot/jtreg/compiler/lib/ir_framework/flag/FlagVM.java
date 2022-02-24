@@ -119,7 +119,7 @@ public class FlagVM {
             cmds.addAll(Arrays.asList(getPrintFlags()));
             cmds.add("-XX:+LogCompilation");
             cmds.add("-XX:CompileCommand=log," + testClass.getCanonicalName() + "::*");
-            addBoolOptionForClass(cmds, testClass, "PrintIdeal");
+            addIntOptionForClass(cmds, testClass, "PrintIdealLevel", 1);
             addBoolOptionForClass(cmds, testClass, "PrintOptoAssembly");
             // Always trap for exception throwing to not confuse IR verification
             cmds.add("-XX:-OmitStackTraceInFastThrow");
@@ -131,6 +131,10 @@ public class FlagVM {
     }
 
     private static void addBoolOptionForClass(ArrayList<String> cmds, Class<?> testClass, String option) {
-        cmds.add("-XX:CompileCommand=option," + testClass.getCanonicalName() + "::*,bool," + option + ",true");
+        cmds.add("-XX:CompileCommand=" + option + "," + testClass.getCanonicalName() + "::*");
+    }
+
+    private static void addIntOptionForClass(ArrayList<String> cmds, Class<?> testClass, String option, int value) {
+        cmds.add("-XX:CompileCommand=" + option + "," + testClass.getCanonicalName() + "::*," + value);
     }
 }
