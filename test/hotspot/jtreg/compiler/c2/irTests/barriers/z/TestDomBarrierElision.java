@@ -66,21 +66,25 @@ public class TestDomBarrierElision {
         // nothing
     }
 
+    static void blackhole(Payload p, Content t) {
+        // nothing
+    }
+
     @Test
-    @IR(counts = { IRNode.LOAD_P,  "1" })
-    //@IR(counts = { IRNode.LOAD_B,  "1" })
+    @IR(counts = { IRNode.ZLOAD_P,  "1" }, phase = Phase.FINAL_CODE)
     private static Content testBasicLoad(Payload p) {
         return p.c;
     }
 
     @Test
-    @IR(counts = { IRNode.STORE_P,  "1" })
-    private static Content testBasicStore(Payload p) {
-        return p.c = null;
+    @IR(counts = { IRNode.ZSTORE_P,  "1" }, phase = Phase.FINAL_CODE)
+    private static Content testBasicStore(Payload p, Content c1) {
+        return p.c = c1;
     }
 
     @Test
-    @IR(counts = { IRNode.LOAD_P,  "2" })
+    @IR(counts = { IRNode.ZLOAD_P,  "1" }, phase = Phase.FINAL_CODE)
+    @IR(counts = { IRNode.ZLOAD_P_ELIDED,  "1" }, phase = Phase.FINAL_CODE)
     private static Content testBasicLoadDom(Payload p) {
         Content t = p.c;
         blackhole(t);
@@ -88,7 +92,8 @@ public class TestDomBarrierElision {
     }
 
     @Test
-    @IR(counts = { IRNode.STORE_P,  "2" })
+    @IR(counts = { IRNode.ZSTORE_P,  "1" }, phase = Phase.FINAL_CODE)
+    @IR(counts = { IRNode.ZSTORE_P_ELIDED,  "1" }, phase = Phase.FINAL_CODE)
     private static void testBasicStoreDom(Payload p, Content t1, Content t2) {
         p.c = t1;
         blackhole(p);
@@ -96,8 +101,8 @@ public class TestDomBarrierElision {
     }
 
     @Test
-    @IR(counts = { IRNode.STORE_P,  "1" })
-    @IR(counts = { IRNode.LOAD_P,   "1" })
+    @IR(counts = { IRNode.ZSTORE_P,  "1" }, phase = Phase.FINAL_CODE)
+    @IR(counts = { IRNode.ZLOAD_P_ELIDED, "1" }, phase = Phase.FINAL_CODE)
     private static Content testBasicStoreLoadDom(Payload p, Content t1) {
         p.c = t1;
         blackhole(p);
@@ -105,12 +110,45 @@ public class TestDomBarrierElision {
     }
 
     @Test
-    @IR(counts = { IRNode.STORE_P,  "1" })
-    @IR(counts = { IRNode.LOAD_P,   "1" })
+    @IR(counts = { IRNode.ZLOAD_P, "1" }, phase = Phase.FINAL_CODE)
+    @IR(counts = { IRNode.ZSTORE_P,"1" }, phase = Phase.FINAL_CODE)
     private static void testBasicLoadStoreDom(Payload p, Content t1) {
         Content t = p.c;
         blackhole(t);
         p.c = t1;
+    }
+
+    @Test
+    @IR(counts = { IRNode.ZLOAD_P, "1" }, phase = Phase.FINAL_CODE)
+    @IR(counts = { IRNode.ZLOAD_P_ELIDED, "2" }, phase = Phase.FINAL_CODE)
+    private static Content testLoadDomShortLoop(Payload p) {
+        Content t = p.c;
+        blackhole(p, t);
+        for (int i = 0 ; i < 5; i++) {
+            t = p.c;
+            blackhole(p, t);
+        }
+        return p.c;
+    }
+
+    @Test
+    @IR(counts = { IRNode.ZLOAD_P, "1" }, phase = Phase.FINAL_CODE)
+    @IR(counts = { IRNode.ZLOAD_P_ELIDED, "2" }, phase = Phase.FINAL_CODE)
+    private static Content testLoadDomLongLoop(Payload p) {
+        Content t = p.c;
+        blackhole(p, t);
+        for (int i = 0 ; i < 1024; i++) {
+            t = p.c;
+            blackhole(p, t);
+        }
+        return p.c;
+    }
+
+    @Run(test = {"testLoadDomShortLoop",
+                 "testLoadDomLongLoop"})
+    private void testLoadDomShortLoop_runner() {
+        testLoadDomShortLoop(p);
+        testLoadDomLongLoop(p);
     }
 
     @Run(test = {"testBasicLoad",
@@ -121,7 +159,7 @@ public class TestDomBarrierElision {
                 "testBasicLoadStoreDom"})
     private void testBasic_runner() {
         testBasicLoad(p);
-        testBasicStore(p);
+        testBasicStore(p, c1);
         testBasicLoadDom(p);
         testBasicStoreDom(p, c1, c2);
         testBasicStoreLoadDom(p, c1);

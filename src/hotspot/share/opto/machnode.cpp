@@ -528,6 +528,7 @@ void MachNode::dump_spec(outputStream *st) const {
     if( C->alias_type(t)->is_volatile() )
       st->print(" Volatile!");
   }
+
 }
 
 //------------------------------dump_format------------------------------------
@@ -544,6 +545,10 @@ void MachTypeNode::dump_spec(outputStream *st) const {
     _bottom_type->dump_on(st);
   } else {
     st->print(" NULL");
+  }
+  uint8_t b = barrier_data();
+  if (b != 0) {
+    st->print(" barrier:%i", b);
   }
 }
 #endif
