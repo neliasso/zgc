@@ -31,7 +31,8 @@ public enum Phase {
     // See blocks that check for Compile::print_ideal().
     AFTER_PARSING("After Parsing"),         // Added by IR framework
     AFTER_OPTIMIZATIONS("Before matching"), // Default tag when specifying PrintIdeal
-    FINAL_CODE("Final Code");               // Added by IR framework
+    FINAL_CODE("Final Code"),               // Added by IR framework
+    PRINT_SCHEDULING("Print Scheduling");   // Added by IR framework
 
     private final String tag;
     private static final Map<String, Phase> PHASES_BY_LABEL = new HashMap<>();

@@ -1,0 +1,662 @@
+commit 483d4b97e0ae4ab7b0d87058901f57688a0f0811
+Author: Nils Eliasson <neliasso@openjdk.org>
+Date:   Mon Feb 14 08:27:21 2022 +0000
+
+    8281505: Add CompileCommand PrintIdealPhase
+    
+    Reviewed-by: kvn, thartmann, chagedorn
+
+diff --git a/src/hotspot/share/compiler/compileBroker.cpp b/src/hotspot/share/compiler/compileBroker.cpp
+index 4ae7bc21ce6..1c8656044b5 100644
+--- a/src/hotspot/share/compiler/compileBroker.cpp
++++ b/src/hotspot/share/compiler/compileBroker.cpp
+@@ -614,9 +614,8 @@ void register_jfr_phasetype_serializer(CompilerType compiler_type) {
+ #ifdef COMPILER2
+   } else if (compiler_type == compiler_c2) {
+     assert(first_registration, "invariant"); // c2 must be registered first.
+-    GrowableArray<const char*>* c2_phase_names = new GrowableArray<const char*>(PHASE_NUM_TYPES);
+     for (int i = 0; i < PHASE_NUM_TYPES; i++) {
+-      const char* phase_name = CompilerPhaseTypeHelper::to_string((CompilerPhaseType) i);
++      const char* phase_name = CompilerPhaseTypeHelper::to_description((CompilerPhaseType) i);
+       CompilerEvent::PhaseEvent::get_phase_id(phase_name, false, false, false);
+     }
+     first_registration = false;
+diff --git a/src/hotspot/share/compiler/compilerDirectives.cpp b/src/hotspot/share/compiler/compilerDirectives.cpp
+index 6d864072d1b..5fe84827195 100644
+--- a/src/hotspot/share/compiler/compilerDirectives.cpp
++++ b/src/hotspot/share/compiler/compilerDirectives.cpp
+@@ -30,6 +30,7 @@
+ #include "compiler/compilerOracle.hpp"
+ #include "memory/allocation.inline.hpp"
+ #include "memory/resourceArea.hpp"
++#include "opto/phasetype.hpp"
+ #include "runtime/globals_extension.hpp"
+ 
+ CompilerDirectives::CompilerDirectives() : _next(NULL), _match(NULL), _ref_count(0) {
+@@ -262,6 +263,7 @@ void DirectiveSet::init_control_intrinsic() {
+ 
+ DirectiveSet::DirectiveSet(CompilerDirectives* d) :_inlinematchers(NULL), _directive(d) {
+ #define init_defaults_definition(name, type, dvalue, compiler) this->name##Option = dvalue;
++  _ideal_phase_name_mask = 0;
+   compilerdirectives_common_flags(init_defaults_definition)
+   compilerdirectives_c2_flags(init_defaults_definition)
+   compilerdirectives_c1_flags(init_defaults_definition)
+@@ -381,6 +383,24 @@ DirectiveSet* DirectiveSet::compilecommand_compatibility_init(const methodHandle
+     compilerdirectives_c2_flags(init_default_cc)
+     compilerdirectives_c1_flags(init_default_cc)
+ 
++    // Parse PrintIdealPhaseName and create an efficient lookup mask
++#ifndef PRODUCT
++#ifdef COMPILER2
++    if (!_modified[PrintIdealPhaseIndex]) {
++      // Parse ccstr and create mask
++      ccstrlist option;
++      if (CompilerOracle::has_option_value(method, CompileCommand::PrintIdealPhase, option)) {
++        uint64_t mask = 0;
++        PhaseNameValidator validator(option, mask);
++        if (validator.is_valid()) {
++          assert(mask != 0, "Must be set");
++          set.cloned()->_ideal_phase_name_mask = mask;
++        }
++      }
++    }
++#endif
++#endif
++
+     // Canonicalize DisableIntrinsic to contain only ',' as a separator.
+     ccstrlist option_value;
+     bool need_reset = true; // if Control/DisableIntrinsic redefined, only need to reset control_words once
+diff --git a/src/hotspot/share/compiler/compilerDirectives.hpp b/src/hotspot/share/compiler/compilerDirectives.hpp
+index 7daa034a8d0..8e3ba2db005 100644
+--- a/src/hotspot/share/compiler/compilerDirectives.hpp
++++ b/src/hotspot/share/compiler/compilerDirectives.hpp
+@@ -67,6 +67,7 @@
+ NOT_PRODUCT(cflags(TraceOptoPipelining, bool, TraceOptoPipelining, TraceOptoPipelining)) \
+ NOT_PRODUCT(cflags(TraceOptoOutput,     bool, TraceOptoOutput, TraceOptoOutput)) \
+ NOT_PRODUCT(cflags(PrintIdeal,          bool, PrintIdeal, PrintIdeal)) \
++NOT_PRODUCT(cflags(PrintIdealPhase,     ccstrlist, "", PrintIdealPhase)) \
+ NOT_PRODUCT(cflags(PrintIdealLevel,     uintx, PrintIdealLevel, PrintIdealLevel)) \
+     cflags(TraceSpilling,           bool, TraceSpilling, TraceSpilling) \
+     cflags(Vectorize,               bool, false, Vectorize) \
+@@ -108,6 +109,7 @@ private:
+   InlineMatcher* _inlinematchers;
+   CompilerDirectives* _directive;
+   TriBoolArray<(size_t)vmIntrinsics::number_of_intrinsics(), int> _intrinsic_control_words;
++  uint64_t _ideal_phase_name_mask;
+ 
+ public:
+   DirectiveSet(CompilerDirectives* directive);
+@@ -137,7 +139,6 @@ public:
+ 
+  private:
+   bool _modified[number_of_flags]; // Records what options where set by a directive
+-
+  public:
+ #define flag_store_definition(name, type, dvalue, cc_flag) type name##Option;
+   compilerdirectives_common_flags(flag_store_definition)
+@@ -150,6 +151,9 @@ public:
+   compilerdirectives_c2_flags(set_function_definition)
+   compilerdirectives_c1_flags(set_function_definition)
+ 
++  void set_ideal_phase_mask(uint64_t mask) { _ideal_phase_name_mask = mask; };
++  uint64_t ideal_phase_mask() { return _ideal_phase_name_mask; };
++
+   void print_intx(outputStream* st, ccstr n, intx v, bool mod) { if (mod) { st->print("%s:" INTX_FORMAT " ", n, v); } }
+   void print_uintx(outputStream* st, ccstr n, intx v, bool mod) { if (mod) { st->print("%s:" UINTX_FORMAT " ", n, v); } }
+   void print_bool(outputStream* st, ccstr n, bool v, bool mod) { if (mod) { st->print("%s:%s ", n, v ? "true" : "false"); } }
+diff --git a/src/hotspot/share/compiler/compilerOracle.cpp b/src/hotspot/share/compiler/compilerOracle.cpp
+index 7d58a28d272..7d8b7179d0c 100644
+--- a/src/hotspot/share/compiler/compilerOracle.cpp
++++ b/src/hotspot/share/compiler/compilerOracle.cpp
+@@ -34,6 +34,7 @@
+ #include "oops/klass.hpp"
+ #include "oops/method.inline.hpp"
+ #include "oops/symbol.hpp"
++#include "opto/phasetype.hpp"
+ #include "runtime/globals_extension.hpp"
+ #include "runtime/handles.inline.hpp"
+ #include "runtime/jniHandles.hpp"
+@@ -683,6 +684,21 @@ static void scan_value(enum OptionType type, char* line, int& total_bytes_read,
+           jio_snprintf(errorbuf, buf_size, "Unrecognized intrinsic detected in %s: %s", option2name(option), validator.what());
+         }
+       }
++#ifndef PRODUCT
++      else if (option == CompileCommand::PrintIdealPhase) {
++        uint64_t mask = 0;
++        PhaseNameValidator validator(value, mask);
++
++        if (!validator.is_valid()) {
++          jio_snprintf(errorbuf, buf_size, "Unrecognized phase name in %s: %s", option2name(option), validator.what());
++        }
++      } else if (option == CompileCommand::TestOptionList) {
++        // all values are ok
++      }
++#endif
++      else {
++        assert(false, "Ccstrlist type option missing validator");
++      }
+ 
+       register_command(matcher, option, (ccstr) value);
+       return;
+diff --git a/src/hotspot/share/compiler/compilerOracle.hpp b/src/hotspot/share/compiler/compilerOracle.hpp
+index f2fc0e8251d..24ed40b7ef2 100644
+--- a/src/hotspot/share/compiler/compilerOracle.hpp
++++ b/src/hotspot/share/compiler/compilerOracle.hpp
+@@ -79,9 +79,10 @@ class methodHandle;
+   option(TraceOptoPipelining, "TraceOptoPipelining", Bool) \
+   option(TraceOptoOutput, "TraceOptoOutput", Bool) \
+   option(TraceSpilling, "TraceSpilling", Bool) \
+-  option(PrintIdeal, "PrintIdeal", Bool)  \
+-  option(PrintIdealLevel, "PrintIdealLevel", Uintx) \
+-  option(IGVPrintLevel, "IGVPrintLevel", Intx) \
++NOT_PRODUCT(option(PrintIdeal, "PrintIdeal", Bool))  \
++NOT_PRODUCT(option(PrintIdealLevel, "PrintIdealLevel", Uintx)) \
++NOT_PRODUCT(option(PrintIdealPhase, "PrintIdealPhase", Ccstrlist)) \
++NOT_PRODUCT(option(IGVPrintLevel, "IGVPrintLevel", Intx)) \
+   option(Vectorize, "Vectorize", Bool) \
+   option(VectorizeDebug, "VectorizeDebug", Uintx) \
+   option(CloneMapDebug, "CloneMapDebug", Bool) \
+diff --git a/src/hotspot/share/compiler/directivesParser.cpp b/src/hotspot/share/compiler/directivesParser.cpp
+index b4ce9a3877c..e48ac58b31c 100644
+--- a/src/hotspot/share/compiler/directivesParser.cpp
++++ b/src/hotspot/share/compiler/directivesParser.cpp
+@@ -27,6 +27,7 @@
+ #include "compiler/directivesParser.hpp"
+ #include "memory/allocation.inline.hpp"
+ #include "memory/resourceArea.hpp"
++#include "opto/phasetype.hpp"
+ #include "runtime/os.hpp"
+ #include <string.h>
+ 
+@@ -334,6 +335,15 @@ bool DirectivesParser::set_option_flag(JSON_TYPE t, JSON_VAL* v, const key* opti
+             error(VALUE_ERROR, "Unrecognized intrinsic detected in DisableIntrinsic: %s", validator.what());
+             return false;
+           }
++        } else if (strncmp(option_key->name, "PrintIdealPhase", 15) == 0) {
++          uint64_t mask = 0;
++          PhaseNameValidator validator(s, mask);
++
++          if (!validator.is_valid()) {
++            error(VALUE_ERROR, "Unrecognized phase name detected in PrintIdealPhase: %s", validator.what());
++            return false;
++          }
++          set->set_ideal_phase_mask(mask);
+         }
+       }
+       break;
+diff --git a/src/hotspot/share/opto/compile.cpp b/src/hotspot/share/opto/compile.cpp
+index 1296a3ff8b8..44456772321 100644
+--- a/src/hotspot/share/opto/compile.cpp
++++ b/src/hotspot/share/opto/compile.cpp
+@@ -4833,7 +4833,7 @@ void Compile::print_method(CompilerPhaseType cpt, int level, Node* n) {
+ #ifndef PRODUCT
+   ResourceMark rm;
+   stringStream ss;
+-  ss.print_raw(CompilerPhaseTypeHelper::to_string(cpt));
++  ss.print_raw(CompilerPhaseTypeHelper::to_name(cpt));
+   if (n != nullptr) {
+     ss.print(": %d %s ", n->_idx, NodeClassNames[n->Opcode()]);
+   }
+@@ -4842,8 +4842,8 @@ void Compile::print_method(CompilerPhaseType cpt, int level, Node* n) {
+   if (should_print_igv(level)) {
+     _igv_printer->print_method(name, level);
+   }
+-  if (should_print_ideal(level)) {
+-    print_ideal_ir(name);
++  if (should_print_ideal(level) || should_print_phase(cpt)) {
++    print_ideal_ir(CompilerPhaseTypeHelper::to_name(cpt));
+   }
+ #endif
+   C->_latest_stage_start_counter.stamp();
+@@ -4873,6 +4873,15 @@ void Compile::end_method() {
+ #endif
+ }
+ 
++bool Compile::should_print_phase(CompilerPhaseType cpt) {
++#ifndef PRODUCT
++  if ((_directive->ideal_phase_mask() & CompilerPhaseTypeHelper::to_bitmask(cpt)) != 0) {
++    return true;
++  }
++#endif
++  return false;
++}
++
+ bool Compile::should_print_igv(int level) {
+ #ifndef PRODUCT
+   if (PrintIdealGraphLevel < 0) { // disabled by the user
+diff --git a/src/hotspot/share/opto/compile.hpp b/src/hotspot/share/opto/compile.hpp
+index 70480b0d06e..0d74c9e5f9a 100644
+--- a/src/hotspot/share/opto/compile.hpp
++++ b/src/hotspot/share/opto/compile.hpp
+@@ -654,6 +654,7 @@ class Compile : public Phase {
+   void begin_method();
+   void end_method();
+   bool should_print_igv(int level);
++  bool should_print_phase(CompilerPhaseType cpt);
+ 
+   void print_method(CompilerPhaseType cpt, int level, Node* n = nullptr);
+ 
+diff --git a/src/hotspot/share/opto/phasetype.hpp b/src/hotspot/share/opto/phasetype.hpp
+index 2aa55a65553..d56a7b13197 100644
+--- a/src/hotspot/share/opto/phasetype.hpp
++++ b/src/hotspot/share/opto/phasetype.hpp
+@@ -25,105 +25,167 @@
+ #ifndef SHARE_OPTO_PHASETYPE_HPP
+ #define SHARE_OPTO_PHASETYPE_HPP
+ 
++#define COMPILER_PHASES(flags) \
++  flags(BEFORE_STRINGOPTS,            "Before StringOpts") \
++  flags(AFTER_STRINGOPTS,             "After StringOpts") \
++  flags(BEFORE_REMOVEUSELESS,         "Before RemoveUseless") \
++  flags(AFTER_PARSING,                "After Parsing") \
++  flags(ITER_GVN1,                    "Iter GVN 1") \
++  flags(EXPAND_VUNBOX,                "Expand VectorUnbox") \
++  flags(SCALARIZE_VBOX,               "Scalarize VectorBox") \
++  flags(INLINE_VECTOR_REBOX,          "Inline Vector Rebox Calls") \
++  flags(EXPAND_VBOX,                  "Expand VectorBox") \
++  flags(ELIMINATE_VBOX_ALLOC,         "Eliminate VectorBoxAllocate") \
++  flags(PHASEIDEAL_BEFORE_EA,         "PhaseIdealLoop before EA") \
++  flags(ITER_GVN_AFTER_VECTOR,        "Iter GVN after vector box elimination") \
++  flags(ITER_GVN_BEFORE_EA,           "Iter GVN before EA") \
++  flags(ITER_GVN_AFTER_EA,            "Iter GVN after EA") \
++  flags(ITER_GVN_AFTER_ELIMINATION,   "Iter GVN after eliminating allocations and locks") \
++  flags(PHASEIDEALLOOP1,              "PhaseIdealLoop 1") \
++  flags(PHASEIDEALLOOP2,              "PhaseIdealLoop 2") \
++  flags(PHASEIDEALLOOP3,              "PhaseIdealLoop 3") \
++  flags(CCP1,                         "PhaseCCP 1") \
++  flags(ITER_GVN2,                    "Iter GVN 2") \
++  flags(PHASEIDEALLOOP_ITERATIONS,    "PhaseIdealLoop iterations") \
++  flags(OPTIMIZE_FINISHED,            "Optimize finished") \
++  flags(GLOBAL_CODE_MOTION,           "Global code motion") \
++  flags(FINAL_CODE,                   "Final Code") \
++  flags(AFTER_EA,                     "After Escape Analysis") \
++  flags(BEFORE_CLOOPS,                "Before CountedLoop") \
++  flags(AFTER_CLOOPS,                 "After CountedLoop") \
++  flags(BEFORE_BEAUTIFY_LOOPS,        "Before beautify loops") \
++  flags(AFTER_BEAUTIFY_LOOPS,         "After beautify loops") \
++  flags(BEFORE_MATCHING,              "Before matching") \
++  flags(MATCHING,                     "After matching") \
++  flags(INCREMENTAL_INLINE,           "Incremental Inline") \
++  flags(INCREMENTAL_INLINE_STEP,      "Incremental Inline Step") \
++  flags(INCREMENTAL_INLINE_CLEANUP,   "Incremental Inline Cleanup") \
++  flags(INCREMENTAL_BOXING_INLINE,    "Incremental Boxing Inline") \
++  flags(CALL_CATCH_CLEANUP,           "Call catch cleanup") \
++  flags(MACRO_EXPANSION,              "Macro expand") \
++  flags(BARRIER_EXPANSION,            "Barrier expand") \
++  flags(END,                          "End") \
++  flags(FAILURE,                      "Failure") \
++  flags(DEBUG,                        "Debug")
++
++#define table_entry(name, description) PHASE_##name,
+ enum CompilerPhaseType {
+-  PHASE_BEFORE_STRINGOPTS,
+-  PHASE_AFTER_STRINGOPTS,
+-  PHASE_BEFORE_REMOVEUSELESS,
+-  PHASE_AFTER_PARSING,
+-  PHASE_ITER_GVN1,
+-  PHASE_EXPAND_VUNBOX,
+-  PHASE_SCALARIZE_VBOX,
+-  PHASE_INLINE_VECTOR_REBOX,
+-  PHASE_EXPAND_VBOX,
+-  PHASE_ELIMINATE_VBOX_ALLOC,
+-  PHASE_PHASEIDEAL_BEFORE_EA,
+-  PHASE_ITER_GVN_AFTER_VECTOR,
+-  PHASE_ITER_GVN_BEFORE_EA,
+-  PHASE_ITER_GVN_AFTER_EA,
+-  PHASE_ITER_GVN_AFTER_ELIMINATION,
+-  PHASE_PHASEIDEALLOOP1,
+-  PHASE_PHASEIDEALLOOP2,
+-  PHASE_PHASEIDEALLOOP3,
+-  PHASE_CCP1,
+-  PHASE_ITER_GVN2,
+-  PHASE_PHASEIDEALLOOP_ITERATIONS,
+-  PHASE_OPTIMIZE_FINISHED,
+-  PHASE_GLOBAL_CODE_MOTION,
+-  PHASE_FINAL_CODE,
+-  PHASE_AFTER_EA,
+-  PHASE_BEFORE_CLOOPS,
+-  PHASE_AFTER_CLOOPS,
+-  PHASE_BEFORE_BEAUTIFY_LOOPS,
+-  PHASE_AFTER_BEAUTIFY_LOOPS,
+-  PHASE_BEFORE_MATCHING,
+-  PHASE_MATCHING,
+-  PHASE_INCREMENTAL_INLINE,
+-  PHASE_INCREMENTAL_INLINE_STEP,
+-  PHASE_INCREMENTAL_INLINE_CLEANUP,
+-  PHASE_INCREMENTAL_BOXING_INLINE,
+-  PHASE_CALL_CATCH_CLEANUP,
+-  PHASE_INSERT_BARRIER,
+-  PHASE_MACRO_EXPANSION,
+-  PHASE_BARRIER_EXPANSION,
+-  PHASE_ADD_UNSAFE_BARRIER,
+-  PHASE_END,
+-  PHASE_FAILURE,
+-  PHASE_DEBUG,
+-
+-  PHASE_NUM_TYPES
++  COMPILER_PHASES(table_entry)
++  PHASE_NUM_TYPES,
++  PHASE_NONE
++};
++#undef table_entry
++
++static const char* phase_descriptions[] = {
++#define array_of_labels(name, description) description,
++       COMPILER_PHASES(array_of_labels)
++#undef array_of_labels
++};
++
++static const char* phase_names[] = {
++#define array_of_labels(name, description) #name,
++       COMPILER_PHASES(array_of_labels)
++#undef array_of_labels
+ };
+ 
+ class CompilerPhaseTypeHelper {
+   public:
+-  static const char* to_string(CompilerPhaseType cpt) {
+-    switch (cpt) {
+-      case PHASE_BEFORE_STRINGOPTS:          return "Before StringOpts";
+-      case PHASE_AFTER_STRINGOPTS:           return "After StringOpts";
+-      case PHASE_BEFORE_REMOVEUSELESS:       return "Before RemoveUseless";
+-      case PHASE_AFTER_PARSING:              return "After Parsing";
+-      case PHASE_ITER_GVN1:                  return "Iter GVN 1";
+-      case PHASE_EXPAND_VUNBOX:              return "Expand VectorUnbox";
+-      case PHASE_SCALARIZE_VBOX:             return "Scalarize VectorBox";
+-      case PHASE_INLINE_VECTOR_REBOX:        return "Inline Vector Rebox Calls";
+-      case PHASE_EXPAND_VBOX:                return "Expand VectorBox";
+-      case PHASE_ELIMINATE_VBOX_ALLOC:       return "Eliminate VectorBoxAllocate";
+-      case PHASE_PHASEIDEAL_BEFORE_EA:       return "PhaseIdealLoop before EA";
+-      case PHASE_ITER_GVN_AFTER_VECTOR:      return "Iter GVN after vector box elimination";
+-      case PHASE_ITER_GVN_BEFORE_EA:         return "Iter GVN before EA";
+-      case PHASE_ITER_GVN_AFTER_EA:          return "Iter GVN after EA";
+-      case PHASE_ITER_GVN_AFTER_ELIMINATION: return "Iter GVN after eliminating allocations and locks";
+-      case PHASE_PHASEIDEALLOOP1:            return "PhaseIdealLoop 1";
+-      case PHASE_PHASEIDEALLOOP2:            return "PhaseIdealLoop 2";
+-      case PHASE_PHASEIDEALLOOP3:            return "PhaseIdealLoop 3";
+-      case PHASE_CCP1:                       return "PhaseCCP 1";
+-      case PHASE_ITER_GVN2:                  return "Iter GVN 2";
+-      case PHASE_PHASEIDEALLOOP_ITERATIONS:  return "PhaseIdealLoop iterations";
+-      case PHASE_OPTIMIZE_FINISHED:          return "Optimize finished";
+-      case PHASE_GLOBAL_CODE_MOTION:         return "Global code motion";
+-      case PHASE_FINAL_CODE:                 return "Final Code";
+-      case PHASE_AFTER_EA:                   return "After Escape Analysis";
+-      case PHASE_BEFORE_CLOOPS:              return "Before CountedLoop";
+-      case PHASE_AFTER_CLOOPS:               return "After CountedLoop";
+-      case PHASE_BEFORE_BEAUTIFY_LOOPS:      return "Before beautify loops";
+-      case PHASE_AFTER_BEAUTIFY_LOOPS:       return "After beautify loops";
+-      case PHASE_BEFORE_MATCHING:            return "Before matching";
+-      case PHASE_MATCHING:                   return "After matching";
+-      case PHASE_INCREMENTAL_INLINE:         return "Incremental Inline";
+-      case PHASE_INCREMENTAL_INLINE_STEP:    return "Incremental Inline Step";
+-      case PHASE_INCREMENTAL_INLINE_CLEANUP: return "Incremental Inline Cleanup";
+-      case PHASE_INCREMENTAL_BOXING_INLINE:  return "Incremental Boxing Inline";
+-      case PHASE_CALL_CATCH_CLEANUP:         return "Call catch cleanup";
+-      case PHASE_INSERT_BARRIER:             return "Insert barrier";
+-      case PHASE_MACRO_EXPANSION:            return "Macro expand";
+-      case PHASE_BARRIER_EXPANSION:          return "Barrier expand";
+-      case PHASE_ADD_UNSAFE_BARRIER:         return "Add barrier to unsafe op";
+-      case PHASE_END:                        return "End";
+-      case PHASE_FAILURE:                    return "Failure";
+-      case PHASE_DEBUG:                      return "Debug";
+-      default:
+-        ShouldNotReachHere();
+-        return NULL;
++  static const char* to_name(CompilerPhaseType cpt) {
++    return phase_names[cpt];
++  }
++  static const char* to_description(CompilerPhaseType cpt) {
++    return phase_descriptions[cpt];
++  }
++  static int to_bitmask(CompilerPhaseType cpt) {
++    return (1 << cpt);
++  }
++};
++
++static CompilerPhaseType find_phase(const char* str) {
++  for (int i = 0; i < PHASE_NUM_TYPES; i++) {
++    if (strcmp(phase_names[i], str) == 0) {
++      return (CompilerPhaseType)i;
++    }
++  }
++  return PHASE_NONE;
++}
++
++class PhaseNameIter {
++ private:
++  char* _token;
++  char* _saved_ptr;
++  char* _list;
++
++ public:
++  PhaseNameIter(ccstrlist option) {
++    _list = (char*) canonicalize(option);
++    _saved_ptr = _list;
++    _token = strtok_r(_saved_ptr, ",", &_saved_ptr);
++  }
++
++  ~PhaseNameIter() {
++    FREE_C_HEAP_ARRAY(char, _list);
++  }
++
++  const char* operator*() const { return _token; }
++
++  PhaseNameIter& operator++() {
++    _token = strtok_r(NULL, ",", &_saved_ptr);
++    return *this;
++  }
++
++  ccstrlist canonicalize(ccstrlist option_value) {
++    char* canonicalized_list = NEW_C_HEAP_ARRAY(char, strlen(option_value) + 1, mtCompiler);
++    int i = 0;
++    char current;
++    while ((current = option_value[i]) != '\0') {
++      if (current == '\n' || current == ' ') {
++        canonicalized_list[i] = ',';
++      } else {
++        canonicalized_list[i] = current;
++      }
++      i++;
+     }
++    canonicalized_list[i] = '\0';
++    return canonicalized_list;
++  }
++};
++
++class PhaseNameValidator {
++ private:
++  bool _valid;
++  char* _bad;
++
++ public:
++  PhaseNameValidator(ccstrlist option, uint64_t& mask) : _valid(true), _bad(nullptr) {
++    for (PhaseNameIter iter(option); *iter != NULL && _valid; ++iter) {
++
++      CompilerPhaseType cpt = find_phase(*iter);
++      if (PHASE_NONE == cpt) {
++        const size_t len = MIN2<size_t>(strlen(*iter), 63) + 1;  // cap len to a value we know is enough for all phase descriptions
++        _bad = NEW_C_HEAP_ARRAY(char, len, mtCompiler);
++        // strncpy always writes len characters. If the source string is shorter, the function fills the remaining bytes with NULLs.
++        strncpy(_bad, *iter, len);
++        _valid = false;
++      } else {
++        assert(cpt < 64, "out of bounds");
++        mask |= CompilerPhaseTypeHelper::to_bitmask(cpt);
++      }
++    }
++  }
++
++  ~PhaseNameValidator() {
++    if (_bad != NULL) {
++      FREE_C_HEAP_ARRAY(char, _bad);
++    }
++  }
++
++  bool is_valid() const {
++    return _valid;
++  }
++
++  const char* what() const {
++    return _bad;
+   }
+ };
+ 
+diff --git a/test/hotspot/jtreg/compiler/oracle/PrintIdealPhaseTest.java b/test/hotspot/jtreg/compiler/oracle/PrintIdealPhaseTest.java
+new file mode 100644
+index 00000000000..f07d7264482
+--- /dev/null
++++ b/test/hotspot/jtreg/compiler/oracle/PrintIdealPhaseTest.java
+@@ -0,0 +1,153 @@
++/*
++ * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
++ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
++ *
++ * This code is free software; you can redistribute it and/or modify it
++ * under the terms of the GNU General Public License version 2 only, as
++ * published by the Free Software Foundation.
++ *
++ * This code is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++ * version 2 for more details (a copy is included in the LICENSE file that
++ * accompanied this code).
++ *
++ * You should have received a copy of the GNU General Public License version
++ * 2 along with this work; if not, write to the Free Software Foundation,
++ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
++ *
++ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
++ * or visit www.oracle.com if you need additional information or have any
++ * questions.
++ */
++
++/*
++ * @test PrintIdealPhaseTest
++ * @summary Checks that -XX:CompileCommand=PrintIdealPhase,... works
++ * @library /test/lib
++ * @modules java.base/jdk.internal.misc
++ *          java.management
++ * @requires vm.debug == true & vm.compiler2.enabled
++ * @run driver compiler.oracle.PrintIdealPhaseTest
++ */
++
++package compiler.oracle;
++
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Paths;
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++import jdk.test.lib.Asserts;
++import jdk.test.lib.process.OutputAnalyzer;
++import jdk.test.lib.process.ProcessTools;
++
++public class PrintIdealPhaseTest {
++
++    public static void main(String[] args) throws Exception {
++        new PrintIdealPhaseTest();
++    }
++
++    PrintIdealPhaseTest() throws Exception {
++        // The Phases specified here will be exchanged for the enum Phase in compiler.lib.ir_framework when it's done
++
++        // Test -XX:CompileCommand=PrintIdealPhase,*::test,CCP1
++        List<String> expectedPhases = new ArrayList<String>();
++        expectedPhases.add("CCP1");
++        runTest("CCP1", expectedPhases, "hotspot_log_1.log", true);
++        runTest("FISH", expectedPhases, "hotspot_log_1f.log", false);
++
++        // Test -XX:CompileCommand=PrintIdealPhase,*::test,MATCHING
++        expectedPhases.clear();
++        expectedPhases.add("MATCHING");
++        runTest("MATCHING", expectedPhases, "hotspot_log_2.log", true);
++
++        // Test -XX:CompileCommand=PrintIdealPhase,*::test,CCP_1,AFTER_MATCHING
++        expectedPhases.add("CCP1");
++        runTest("MATCHING,CCP1", expectedPhases, "hotspot_log_3.log", true);
++    }
++
++    private void runTest(String cmdPhases, List<String> expectedPhases, String logFile, boolean valid) throws Exception {
++        List<String> options = new ArrayList<String>();
++        options.add("-Xbatch");
++        options.add("-XX:+PrintCompilation");
++        options.add("-XX:LogFile="+logFile);
++        options.add("-XX:+IgnoreUnrecognizedVMOptions");
++        options.add("-XX:CompileCommand=PrintIdealPhase," + getTestClass() + "::test," + cmdPhases);
++        options.add(getTestClass());
++
++        OutputAnalyzer oa = ProcessTools.executeTestJvm(options);
++        if (valid) {
++            oa.shouldHaveExitValue(0)
++            .shouldContain("CompileCommand: PrintIdealPhase compiler/oracle/PrintIdealPhaseTest$TestMain.test const char* PrintIdealPhase = '"+cmdPhases.replace(',', ' ')+"'")
++            .shouldNotContain("CompileCommand: An error occurred during parsing")
++            .shouldNotContain("Error: Unrecognized phase name in PrintIdealPhase:")
++            .shouldNotContain("# A fatal error has been detected by the Java Runtime Environment");
++
++             // Check that all the expected phases matches what can be found in the compilation log file
++             HashSet<String> loggedPhases = parseLogFile(logFile);
++             System.out.println("Logged phases:");
++             for (String loggedPhase : loggedPhases) {
++                 System.out.println("loggedPhase: "+ loggedPhase);
++             }
++             for (String expectedPhase : expectedPhases) {
++                 System.out.println("Looking for phase: " + expectedPhase);
++
++                 Asserts.assertTrue(loggedPhases.contains(expectedPhase), "Must find specified phase: " + expectedPhase);
++                 loggedPhases.remove(expectedPhase);
++             }
++             Asserts.assertTrue(loggedPhases.isEmpty(), "Expect no other phases");
++        } else {
++            // Check that we don't pass even though bad phase names where given
++            oa.shouldHaveExitValue(0)
++            .shouldContain("CompileCommand: An error occurred during parsing")
++            .shouldContain("Error: Unrecognized phase name in PrintIdealPhase:");
++        }
++    }
++
++    private HashSet<String> parseLogFile(String logFile) {
++        String printIdealTag = "<ideal";
++        Pattern compilePhasePattern = Pattern.compile("compile_phase='([a-zA-Z0-9 ]+)'");
++        HashSet<String> phasesFound = new HashSet<>();
++
++        try (var br = Files.newBufferedReader(Paths.get(logFile))) {
++            String line;
++            while ((line = br.readLine()) != null) {
++                if (line.startsWith(printIdealTag)) {
++                    Matcher matcher = compilePhasePattern.matcher(line);
++                    if (matcher.find()) {
++                        phasesFound.add(matcher.group(1));
++                    } else {
++                        throw new Error("Failed to match compile_phase in file: " + logFile);
++                    }
++                }
++            }
++        } catch (IOException e) {
++            throw new Error("Failed to read " + logFile + " data: " + e, e);
++        }
++        return phasesFound;
++    }
++
++    // Test class that is invoked by the sub process
++    public String getTestClass() {
++        return TestMain.class.getName();
++    }
++
++    public static class TestMain {
++        public static void main(String[] args) {
++            for (int i = 0; i < 20_000; i++) {
++                test(i);
++            }
++        }
++
++        static void test(int i) {
++            if ((i % 1000) == 0) {
++                System.out.println("Hello World!");
++            }
++        }
++    }
++}

@@ -336,6 +336,20 @@ void PhaseOutput::perform_mach_node_analysis() {
   if (UseZGC && BarrierNullCheckElimination) {
     perform_peeping();
   }
+  #ifndef PRODUCT
+  if (C->trace_opto_output()) {
+    ttyLocker ttyl;
+    if (xtty != NULL) {
+    xtty->head("ideal compile_id='%d'%s compile_phase='Print Scheduling'",
+               C->compile_id(),
+               C->is_osr_compilation() ? " compile_kind='osr'" : "");
+    }
+    print_scheduling();
+    if (xtty != NULL) {
+      xtty->tail("ideal");
+    }
+  }
+  #endif
 }
 
 void PhaseOutput::perform_peeping() {

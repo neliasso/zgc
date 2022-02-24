@@ -68,8 +68,10 @@ public class IRNode {
     public static final String MACH_PROJ = START + "MachProj" + MID + END;
     public static final String ZLOAD_P = START + "zLoadP" + MID + " barrier:1 " + END;
     public static final String ZLOAD_P_ELIDED = START + "zLoadP" + MID + " barrier:81 " + END;
+    public static final String ZLOAD_P_NULLCHECK_ELIDED = START + "zLoadP" + MID + " barrier:129 " + END;
     public static final String ZSTORE_P = START + "zStoreP" + MID + " barrier:1 " + END;
     public static final String ZSTORE_P_ELIDED = START + "zStoreP" + MID + " barrier:81 " + END;
+    public static final String TESTP_REG = START + "testP_reg" + MID + END;
 
     public static final String STORE = START + "Store(B|C|S|I|L|F|D|P|N)" + MID + END;
     public static final String STORE_B = START + "StoreB" + MID + END; // Store to boolean is also mapped to byte
