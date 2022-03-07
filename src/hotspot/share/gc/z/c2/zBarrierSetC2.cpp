@@ -533,18 +533,69 @@ static int block_register_safepoints(Block* block, Node* dom_access, uint from, 
   return count;
 }
 
+// Check the type if the checkcast node to determine the type of the allocation
+static bool is_array_allocation(MachNode* node) {
+  precond((node->ideal_Opcode() == Op_CheckCastPP));
+
+  return (node->get_ptr_type()->isa_aryptr() != NULL);
+}
+
+// A CheckCast that marks an allocation is hanging of a InitalizeNode,
+// but sometimes a membar_storestore is in between
+// Both membar and InitalizeNode is MultiNodes using projs
+static bool is_allocation(MachNode* node) {
+  precond((node->ideal_Opcode() == Op_CheckCastPP));
+  if ((node->in(0) == NULL) || (node->in(0)->is_Region())) {
+    return false;
+  }
+  assert(node->in(0)->is_MachProj(), "Must be proj below Initialize or a membar");
+  Node* above = node->in(0)->in(0); // first in(0) is the proj
+  if (above->is_Mach()) {
+    MachNode* mabove = above->as_Mach();
+    if ((mabove->ideal_Opcode() == Op_MemBarStoreStore) ||
+        (mabove->ideal_Opcode() == Op_MemBarRelease)) {
+      above = above->in(0)->in(0); // first in(0) is the proj
+    }
+  }
+  if (above->is_Initialize()) {
+    return true;
+  } else {
+    assert(0, "check");
+  }
+  return false;
+}
+
 // Look through various node aliases
 // If look_through_spill is false - the first spill node will be returned
-static const Node* look_through_node(const Node* node, bool look_through_spill = true) {
+static const Node* look_through_node(const Node* node) {
   while (node != NULL) {
     const Node* new_node = node;
     if (node->is_Mach()) {
-      const MachNode* node_mach = node->as_Mach();
+      MachNode* node_mach = node->as_Mach();
       if (node_mach->ideal_Opcode() == Op_CheckCastPP) {
+        if (is_allocation(node_mach)) {
+          return node;
+        } else {
+          new_node = node->in(1);
+        }
+      }
+      else if (node_mach->ideal_Opcode() == Op_CastPP) {
+        assert(0, "test");
         new_node = node->in(1);
       }
-      if (node_mach->is_SpillCopy() && look_through_spill) {
+      else if (node_mach->is_SpillCopy()) {
         new_node = node->in(1);
+      } // TOdo check if any other aliases
+      else if (node_mach->ideal_Opcode() == Op_LoadP) { }
+      else if (node_mach->ideal_Opcode() == Op_ConP) { }
+      else if (node_mach->ideal_Opcode() == Op_CMoveP) { }
+      else if (node_mach->ideal_Opcode() == Op_CreateEx) { }
+      else if (node_mach->ideal_Opcode() == 25) { }
+      else {
+        tty->print_cr("**********");
+        node->dump();
+        tty->print_cr("**********");
+        assert(0, "Unknown node");
       }
     }
     if (new_node == node || new_node == NULL) {
@@ -554,45 +605,6 @@ static const Node* look_through_node(const Node* node, bool look_through_spill =
     }
   }
   return node;
-}
-
-// Check the type if the checkcast node to determine the type of the allocation
-static bool is_array_allocation(const Node* node) {
-  precond(node->is_Phi());
-
-  MachNode* cc = node->raw_out(0)->as_Mach();
-  if (cc->ideal_Opcode() == Op_CheckCastPP) {
-    if (cc->get_ptr_type()->isa_aryptr()) {
-      // We must know the offset/index if an oop* array dominates an access
-      return true;
-    }
-  }
-  return false;
-}
-
-// Match the phi node that connects a TLAB allocation fast path with its slowpath
-static bool is_allocation(const Node* node) {
-  if (node->req() != 3) {
-    return false;
-  }
-  const Node* fast_node = node->in(2);
-  if (!fast_node->is_Mach()) {
-    return false;
-  }
-  MachNode* fast_mach = fast_node->as_Mach();
-  if (fast_mach->ideal_Opcode() != Op_LoadP) {
-    return false;
-  }
-  intptr_t offset;
-  const Node* base = look_through_node(fast_mach->get_base_and_offset(offset));
-  if (base == NULL || !base->is_Mach()) {
-    return false;
-  }
-  const MachNode* base_mach = base->as_Mach();
-  if (base_mach->ideal_Opcode() != Op_ThreadLocal) {
-    return false;
-  }
-  return offset == in_bytes(Thread::tlab_top_offset());
 }
 
 void ZBarrierSetC2::mark_mach_barrier_dom_elided(MachNode* mach) const{
@@ -611,12 +623,6 @@ void ZBarrierSetC2::record_safepoint_attached_barrier(MachNode* const access, No
   sfp->record_barrier(access, mem DEBUG_ONLY(COMMA dom_access));
 }
 
-bool access_is_spilled(MachNode* const access, const Node* const access_obj) {
-  intptr_t mem_offset;
-  // The access is spilled if you get different results with look_through true or false.
-  return look_through_node(access->get_base_and_offset(mem_offset), false) != access_obj;
-}
-
 void ZBarrierSetC2::process_access(MachNode* const access, Node* dom_access, GrowableArray<SafepointAccessRecord*> &access_list, intptr_t access_offset) const {
 
   Compile* const C = Compile::current();
@@ -626,11 +632,6 @@ void ZBarrierSetC2::process_access(MachNode* const access, Node* dom_access, Gro
   bool offset_is_short = (access_offset >> 16) == 0;
 
   bool trace = C->directive()->TraceBarrierEliminationOption;
-
-  /* if ((access->ideal_Opcode() != Op_LoadP) && (access->ideal_Opcode() != Op_StoreP)) {
-    // skip all non loads and stores for SABs
-    assert(0, "check"); // TODO verify
-  } else */
 
   if (access_list.length() == 0) {
     if (C->directive()->UseDomBarrierEliminationOption) {
@@ -747,8 +748,13 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl_inner(Block* dom_block, Nod
 Node* next_def(const Node* node) {
   precond(node != NULL);
   if (node->is_Mach()) {
-    const MachNode* node_mach = node->as_Mach();
+    MachNode* node_mach = node->as_Mach();
     if (node_mach->ideal_Opcode() == Op_CheckCastPP) {
+      assert(!is_allocation(node_mach), "check");
+      return node->in(1);
+    }
+    if (node_mach->ideal_Opcode() == Op_CastPP) {
+      assert(0, "test");
       return node->in(1);
     }
     if (node_mach->is_SpillCopy()) {
@@ -788,8 +794,8 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl(Node_List& accesses, Node_L
       if (dom == access) {
         continue;
       }
-      if (dom->is_Phi()) {
-        // Allocation node
+      if (dom->isa_Mach() && (dom->as_Mach()->ideal_Opcode() == Op_CheckCastPP)) {
+        // Allocation
         if (dom != access_mem) {
           continue;
         }
@@ -824,7 +830,7 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl(Node_List& accesses, Node_L
       if (dom_mem != NULL) {
         dom_mem_block = cfg->get_block_for_node(dom_mem);
       } else {
-        dom_mem_block = dom_block; // Phis/Allocations don't have mem_obj
+        dom_mem_block = dom_block; // Allocations don't have mem_obj
       }
 
       // Now we have established that we have an access than is dominated by another access or allocation.
@@ -839,8 +845,10 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl(Node_List& accesses, Node_L
       int limit = 0;
       while (true) {
         analyze_dominating_barriers_impl_inner(dom_mem_block, dom, node, node_def, access_list);
-        if (node_def->is_Phi()) {
-          break; // allocation - we are done
+        if (node_def->is_Mach() && node_def->as_Mach()->ideal_Opcode() == Op_CheckCastPP) {
+          if (is_allocation(node_def->as_Mach())) {
+            break; // allocation - we are done
+          }
         }
         if (node_def == dom_mem) {
           break; // reached the end - we are done
@@ -857,7 +865,6 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl(Node_List& accesses, Node_L
     }
   }
 }
-
 
 void ZBarrierSetC2::analyze_dominating_barriers() const {
   ResourceMark rm;
@@ -878,10 +885,14 @@ void ZBarrierSetC2::analyze_dominating_barriers() const {
     const Block* const block = cfg->get_block(i);
     for (uint j = 0; j < block->number_of_nodes(); ++j) {
       Node* const node = block->get_node(j);
-      if (node->is_Phi()) { // Change to CheckCastPP with InitalizeNode as ctrl
-        if (is_allocation(node)) {
-          if (is_array_allocation(node)) {
-            // We must know the offset/index if an oop* array dominates an access
+      if (!node->is_Mach()) {
+        continue;
+      }
+      MachNode* const mach = node->as_Mach();
+      if (mach->ideal_Opcode() == Op_CheckCastPP) {
+        if (is_allocation(mach)) {
+          if (is_array_allocation(mach)) {
+            // TODO We must know the offset/index if an oop* array dominates an access
             continue;
           }
 
@@ -894,11 +905,8 @@ void ZBarrierSetC2::analyze_dominating_barriers() const {
           // initialized memory location could be raw null, which isn't store-good.
         }
         continue;
-      } else if (!node->is_Mach()) {
-        continue;
       }
 
-      MachNode* const mach = node->as_Mach();
       switch (mach->ideal_Opcode()) {
       case Op_LoadP:
         if ((mach->barrier_data() & ZBarrierStrong) != 0 &&
