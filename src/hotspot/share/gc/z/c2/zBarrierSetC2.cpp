@@ -559,8 +559,6 @@ static bool is_allocation(MachNode* node) {
   }
   if (above->is_Initialize()) {
     return true;
-  } else {
-    assert(0, "check");
   }
   return false;
 }
