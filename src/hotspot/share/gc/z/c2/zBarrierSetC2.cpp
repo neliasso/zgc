@@ -586,6 +586,7 @@ static const Node* look_through_node(const Node* node) {
       else if (node_mach->is_SpillCopy()) {
         new_node = node->in(1);
       } // TOdo check if any other aliases
+#ifdef ASSERT
       else if (node_mach->ideal_Opcode() == Op_LoadP) { }
       else if (node_mach->ideal_Opcode() == Op_ConP) { }
       else if (node_mach->ideal_Opcode() == Op_CMoveP) { }
@@ -597,6 +598,7 @@ static const Node* look_through_node(const Node* node) {
         tty->print_cr("**********");
         assert(0, "Unknown node");
       }
+#endif
     }
     if (new_node == node || new_node == NULL) {
       break;
