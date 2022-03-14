@@ -60,14 +60,14 @@ static void z_keep_alive_load_barrier(MacroAssembler& _masm, const MachNode* nod
 
 static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register ref) {
   const bool on_non_strong =
-      ((node->barrier_data() & ZBarrierWeak) != 0) ||
-      ((node->barrier_data() & ZBarrierPhantom) != 0);
+      node->has_barrier_flag(ZBarrierWeak) ||
+      node->has_barrier_flag(ZBarrierPhantom);
 
   if (on_non_strong) {
     z_keep_alive_load_barrier(_masm, node, ref_addr, ref);
     return;
   }
-  if (ZVerifyElidedBarriers && ((node->barrier_data() & ZBarrierElided) != 0)) {
+  if (ZVerifyElidedBarriers && node->has_barrier_flag(ZBarrierElided)) {
     Label good;
     __ testptr(ref, ZBarrierSetAssembler::load_bad_mask_from_thread(r15_thread));
     __ jcc(Assembler::zero, good);
@@ -78,7 +78,7 @@ static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address 
     __ bind(good);
   }
   z_uncolor(_masm, node, ref);
-  if ((node->barrier_data() & ZBarrierElided) != 0) {
+  if (node->has_barrier_flag(ZBarrierElided)) {
     return;
   }
   ZLoadBarrierStubC2* const stub = ZLoadBarrierStubC2::create(node, ref_addr, ref);
@@ -88,9 +88,9 @@ static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address 
 }
 
 static void z_store_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register rnew_zaddress, Register rnew_zpointer, bool is_atomic) {
-  if ((node->barrier_data() & ZBarrierElided) != 0) {
+  if (node->has_barrier_flag(ZBarrierElided)) {
     // Test to avoid verifying on uninitialized oop fields
-    if (ZVerifyElidedBarriers && (node->barrier_data() & ZBarrierSABElided) != 0) {
+    if (ZVerifyElidedBarriers && node->has_barrier_flag(ZBarrierSABElided)) {
       Label good;
       __ movptr(rnew_zpointer, ref_addr);
       __ testptr(rnew_zpointer, ZBarrierSetAssembler::store_bad_mask_from_thread(r15_thread));

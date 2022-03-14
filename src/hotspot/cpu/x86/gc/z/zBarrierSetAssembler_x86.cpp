@@ -1324,7 +1324,7 @@ void ZBarrierSetAssembler::generate_c2_load_barrier_stub(MacroAssembler* masm, Z
   }
 
   // Handle elided cmps that set ZF
-  if ((stub->node()->barrier_data() & ZBarrierNullCheckRemoval) != 0) {
+  if (stub->node()->has_barrier_flag(ZBarrierNullCheckRemoval)) {
     __ testptr(stub->ref(), stub->ref());
   }
 
