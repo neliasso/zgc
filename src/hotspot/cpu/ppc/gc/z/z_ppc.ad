@@ -52,12 +52,12 @@ static void check_color(MacroAssembler& _masm, Register ref, bool on_non_strong)
 }
 
 static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register ref) {
-  if ((node->barrier_data() & ZBarrierElided) != 0) {
+  if (node->has_barrier_flag(ZBarrierElided)) {
     z_uncolor(_masm, ref);
   } else {
     const bool on_non_strong =
-      ((node->barrier_data() & ZBarrierWeak) != 0) ||
-      ((node->barrier_data() & ZBarrierPhantom) != 0);
+      node->has_barrier_flag(ZBarrierWeak) ||
+      node->has_barrier_flag(ZBarrierPhantom);
 
     check_color(_masm, ref, on_non_strong);
 
@@ -70,7 +70,7 @@ static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address 
 }
 
 static void z_store_barrier(MacroAssembler& _masm, const MachNode* node, Register ref_base, intptr_t disp, Register rnew_zaddress, Register rnew_zpointer, bool is_atomic) {
-  if ((node->barrier_data() & ZBarrierElided) != 0) {
+  if (node->has_barrier_flag(ZBarrierElided)) {
     z_color(_masm, rnew_zpointer, rnew_zaddress);
   } else {
     ZStoreBarrierStubC2* const stub = ZStoreBarrierStubC2::create(node, Address(ref_base, disp), rnew_zaddress, rnew_zpointer, is_atomic);
@@ -161,7 +161,7 @@ instruct zLoadP_acq(iRegPdst dst, memoryAlg4 mem, flagsRegCR0 cr0)
 
     // Uses the isync instruction as an acquire barrier.
     // This exploits the compare and the branch in the z load barrier (load, compare and branch, isync).
-    if ((node->barrier_data() & ZBarrierElided) != 0) __ twi_0($dst$$Register);
+    if (node->has_barrier_flag(ZBarrierElided)) __ twi_0($dst$$Register);
     __ isync();
   %}
   ins_pipe(pipe_class_default);
