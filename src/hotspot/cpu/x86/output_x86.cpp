@@ -33,7 +33,7 @@ void perform_peeping();
     int extra_padding = IntelJccErratum::tag_affected_machnodes(C, C->cfg(), C->regalloc());
     _buf_sizes._code += extra_padding;
   }
-  if (UseZGC && BarrierNullCheckElimination) {
+  if (UseBarrierNullCheckElimination) {
     perform_peeping();
   }
 }
