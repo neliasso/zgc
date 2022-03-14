@@ -55,15 +55,15 @@ static void z_keep_alive_load_barrier(MacroAssembler& _masm, const MachNode* nod
 
 static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register ref, Register tmp) {
   const bool on_non_strong =
-      ((node->barrier_data() & ZBarrierWeak) != 0) ||
-      ((node->barrier_data() & ZBarrierPhantom) != 0);
+      node->has_barrier_flag(ZBarrierWeak) ||
+      node->has_barrier_flag(ZBarrierPhantom);
 
   if (on_non_strong) {
     z_keep_alive_load_barrier(_masm, node, ref_addr, ref, tmp);
     return;
   }
 
-  if ((node->barrier_data() & ZBarrierElided) != 0) {
+  if (node->has_barrier_flag(ZBarrierElided)) {
     z_uncolor(_masm, node, ref);
     return;
   }
@@ -79,7 +79,7 @@ static void z_load_barrier(MacroAssembler& _masm, const MachNode* node, Address 
 }
 
 static void z_store_barrier(MacroAssembler& _masm, const MachNode* node, Address ref_addr, Register rnew_zaddress, Register rnew_zpointer, Register tmp, bool is_atomic) {
-  if ((node->barrier_data() & ZBarrierElided) != 0) {
+  if (node->has_barrier_flag(ZBarrierElided)) {
     z_color(_masm, node, rnew_zpointer, rnew_zaddress, rnew_zpointer);
   } else {
     ZStoreBarrierStubC2* const stub = ZStoreBarrierStubC2::create(node, ref_addr, rnew_zaddress, rnew_zpointer, is_atomic);

@@ -140,7 +140,7 @@ public:
     }
 
     const MachNode* const mach = node->as_Mach();
-    if ((mach->barrier_data() & ZBarrierElided) != 0) {
+    if (mach->has_barrier_flag(ZBarrierElided)) {
       // Don't need liveness data for nodes without barriers
       return NULL;
     }
@@ -604,7 +604,7 @@ void ZBarrierSetC2::mark_mach_barrier_sab_elided(MachNode* mach) const {
 }
 
 void ZBarrierSetC2::mark_mach_barrier_sab_bailout(MachNode* mach) const {
-  assert((mach->barrier_data() & ZBarrierElided) == 0, "must not have been marked sanity");
+  assert(!mach->has_barrier_flag(ZBarrierElided), "must not have been marked sanity");
 }
 
 void ZBarrierSetC2::record_safepoint_attached_barrier(MachNode* const access, Node* mem, MachSafePointNode* sfp DEBUG_ONLY(COMMA Node* dom_access)) const {
@@ -766,7 +766,7 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl(Node_List& accesses, Node_L
     Block* const access_block = cfg->get_block_for_node(access);
     const uint   access_index = block_index(access_block, access);
 
-    if ((access->barrier_data() & ZBarrierElided) != 0) {
+    if (access->has_barrier_flag(ZBarrierElided)) {
        continue; // already elided
     }
 
@@ -895,14 +895,14 @@ void ZBarrierSetC2::analyze_dominating_barriers() const {
       MachNode* const mach = node->as_Mach();
       switch (mach->ideal_Opcode()) {
       case Op_LoadP:
-        if ((mach->barrier_data() & ZBarrierStrong) != 0 &&
-            (mach->barrier_data() & ZBarrierNoKeepalive) == 0) {
+        if (mach->has_barrier_flag(ZBarrierStrong) &&
+            !mach->has_barrier_flag(ZBarrierNoKeepalive)) {
           loads.push(mach);
           load_dominators.push(mach);
         }
         break;
       case Op_StoreP:
-        if ((mach->barrier_data() & ZBarrierTypeMask) != 0) {
+        if (mach->has_barrier_flag(ZBarrierTypeMask)) {
           stores.push(mach);
           load_dominators.push(mach);
           store_dominators.push(mach);
@@ -912,7 +912,7 @@ void ZBarrierSetC2::analyze_dominating_barriers() const {
       case Op_CompareAndExchangeP:
       case Op_CompareAndSwapP:
       case Op_GetAndSetP:
-        if ((mach->barrier_data() & ZBarrierTypeMask) != 0) {
+        if (mach->has_barrier_flag(ZBarrierTypeMask)) {
           atomics.push(mach);
           load_dominators.push(mach);
           store_dominators.push(mach);
@@ -1068,7 +1068,7 @@ void ZBarrierSetC2::gather_stats() const {
         switch (mach->ideal_Opcode()) {
           case Op_LoadP:
             type = LOAD_COUNTER;
-            if ((mach->barrier_data() & ZBarrierNullCheckRemoval) != 0) {
+            if (mach->has_barrier_flag(ZBarrierNullCheckRemoval)) {
               _elided_zf++;
             }
             break;
