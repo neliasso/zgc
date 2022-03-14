@@ -57,7 +57,7 @@ public class TestNullCheckRemoval {
 
     public static void main(String[] args) {
         TestFramework framework = new TestFramework();
-        Scenario zgc = new Scenario(0, "-XX:+UseZGC", "-XX:+BarrierNullCheckElimination", "-XX:CompileCommand=dontinline,*::blackhole");
+        Scenario zgc = new Scenario(0, "-XX:+UseZGC", "-XX:+UseBarrierNullCheckElimination", "-XX:CompileCommand=dontinline,*::blackhole");
         framework.addScenarios(zgc).start();
     }
 
