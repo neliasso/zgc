@@ -29,6 +29,7 @@ import compiler.lib.ir_framework.*;
  * @test
  * @summary Test elision of dominating barriers in ZGC
  * @library /test/lib /
+ * @requires vm.gc.z
  * @run driver compiler.c2.irTests.barriers.z.TestNullCheckRemoval
  */
 
