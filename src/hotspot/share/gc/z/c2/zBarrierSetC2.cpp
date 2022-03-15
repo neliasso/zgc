@@ -589,6 +589,9 @@ static const Node* look_through_node(const Node* node) {
       else if (node_mach->ideal_Opcode() == Op_ConP) { }
       else if (node_mach->ideal_Opcode() == Op_CMoveP) { }
       else if (node_mach->ideal_Opcode() == Op_CreateEx) { }
+      else if (node_mach->ideal_Opcode() == Op_CompareAndExchangeP) { }
+      else if (node_mach->ideal_Opcode() == Op_CompareAndSwapP) { }
+      else if (node_mach->ideal_Opcode() == Op_WeakCompareAndSwapP) { }
       else if (node_mach->ideal_Opcode() == 25) { }
       else {
         tty->print_cr("**********");
