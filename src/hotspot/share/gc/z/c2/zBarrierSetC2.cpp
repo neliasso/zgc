@@ -578,28 +578,11 @@ static const Node* look_through_node(const Node* node) {
         }
       }
       else if (node_mach->ideal_Opcode() == Op_CastPP) {
-        assert(0, "test");
         new_node = node->in(1);
       }
       else if (node_mach->is_SpillCopy()) {
         new_node = node->in(1);
-      } // TOdo check if any other aliases
-#ifdef ASSERT
-      else if (node_mach->ideal_Opcode() == Op_LoadP) { }
-      else if (node_mach->ideal_Opcode() == Op_ConP) { }
-      else if (node_mach->ideal_Opcode() == Op_CMoveP) { }
-      else if (node_mach->ideal_Opcode() == Op_CreateEx) { }
-      else if (node_mach->ideal_Opcode() == Op_CompareAndExchangeP) { }
-      else if (node_mach->ideal_Opcode() == Op_CompareAndSwapP) { }
-      else if (node_mach->ideal_Opcode() == Op_WeakCompareAndSwapP) { }
-      else if (node_mach->ideal_Opcode() == 25) { }
-      else {
-        tty->print_cr("**********");
-        node->dump();
-        tty->print_cr("**********");
-        assert(0, "Unknown node");
       }
-#endif
     }
     if (new_node == node || new_node == NULL) {
       break;
@@ -757,7 +740,6 @@ Node* next_def(const Node* node) {
       return node->in(1);
     }
     if (node_mach->ideal_Opcode() == Op_CastPP) {
-      assert(0, "test");
       return node->in(1);
     }
     if (node_mach->is_SpillCopy()) {
