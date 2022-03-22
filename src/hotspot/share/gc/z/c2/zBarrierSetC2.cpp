@@ -319,7 +319,7 @@ int ZBarrierSetC2::estimate_stub_size() const {
 }
 
 int ZBarrierSetC2::estimate_mach_node_size(MachNode* mach) const {
-  if (ZVerifyElidedBarriers && (mach->ideal_Opcode() == Op_StoreP) || (mach->ideal_Opcode() == Op_LoadP)) {
+  if (ZVerifyElidedBarriers && ((mach->ideal_Opcode() == Op_StoreP) || (mach->ideal_Opcode() == Op_LoadP))) {
     return 64;
   }
   return 0;
@@ -684,7 +684,6 @@ void ZBarrierSetC2::analyze_dominating_barriers_impl_inner(Block* dom_block, Nod
   PhaseCFG* const cfg = C->cfg();
 
   Block* const access_block = cfg->get_block_for_node(access);
-  intptr_t access_offset;
   Block* const def_block = cfg->get_block_for_node(def_mem);
 
   const uint access_index = block_index(access_block, access);
