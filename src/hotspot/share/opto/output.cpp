@@ -333,57 +333,20 @@ void PhaseOutput::perform_mach_node_analysis() {
 
   pd_perform_mach_node_analysis();
 
-  if (UseZGC && BarrierNullCheckElimination) {
-    perform_peeping();
-  }
-}
-
-void PhaseOutput::perform_peeping() {
-  Compile* const C = Compile::current();
-  PhaseCFG* const cfg = C->cfg();
-  for (uint i = 0; i < cfg->number_of_blocks(); ++i) {
-    Block* const block = cfg->get_block(i);
-    for (uint j = 0; j < block->number_of_nodes(); ++j) {
-      Node* const node = block->get_node(j);
-      MachNode* mn = node->isa_Mach();
-      if (mn == nullptr) {
-        continue;
-      }
-
-        if (mn->rule() == MachOpcodes::zLoadP_rule) {
-        // Ensure that there are at least 2 more instructions, a machproj and a testreg
-        if (j >= (block->number_of_nodes() - 2)) {
-          continue; // no room
-        }
-
-        // Succeeded by a connected MachProj
-        MachProjNode* proj = block->get_node(j + 1)->isa_MachProj();
-        if ((proj == nullptr) || (proj->in(0) != mn)) {
-          continue;
-        }
-
-        // Succeeded by a connected testP_reg node
-        MachNode* const test = block->get_node(j + 2)->isa_Mach();
-        if ((test == nullptr) || (test->rule() != MachOpcodes::testP_reg_rule)) {
-          continue;
-        }
-
-        // TODO replace with tests for matching registers
-        // TODO - allow instructions in between - how common?
-        // Must be connected to load
-        if (test->in(1) != mn) {
-          continue;
-        }
-
-        // Record that the stub need to recreate ZF flag
-        mn->add_barrier_data(ZBarrierNullCheckRemoval);
-
-        // Drop node
-        assert(block->find_node(test) == (j + 2), "check");
-        block->remove_node(j + 2);
-      }
+  #ifndef PRODUCT
+  if (C->trace_opto_output()) {
+    ttyLocker ttyl;
+    if (xtty != NULL) {
+    xtty->head("ideal compile_id='%d'%s compile_phase='Print Scheduling'",
+               C->compile_id(),
+               C->is_osr_compilation() ? " compile_kind='osr'" : "");
+    }
+    print_scheduling();
+    if (xtty != NULL) {
+      xtty->tail("ideal");
     }
   }
+  #endif
 }
 
 // Convert Nodes to instruction bits and pass off to the VM

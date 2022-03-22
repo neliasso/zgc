@@ -146,7 +146,6 @@ private:
 
   void perform_mach_node_analysis();
   void pd_perform_mach_node_analysis();
-  void perform_peeping();
 
 public:
   PhaseOutput();
