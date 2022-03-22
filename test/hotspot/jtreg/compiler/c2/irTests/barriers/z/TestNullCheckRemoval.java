@@ -23,8 +23,6 @@
 
 package compiler.c2.irTests.barriers.z;
 
-import compiler.c2.irTests.barriers.z.TestDomBarrierElision.Content;
-import compiler.c2.irTests.barriers.z.TestDomBarrierElision.Payload;
 import compiler.lib.ir_framework.*;
 
 /*
@@ -34,23 +32,23 @@ import compiler.lib.ir_framework.*;
  * @run driver compiler.c2.irTests.barriers.z.TestNullCheckRemoval
  */
 
+class Payload {
+    Content c;
+
+    public Payload(Content c) {
+        this.c = c;
+    }
+}
+
+class Content {
+    public int id;
+
+    public Content(int id) {
+        this.id = id;
+    }
+}
+
 public class TestNullCheckRemoval {
-
-    class Payload {
-        Content c;
-
-        public Payload(Content c) {
-            this.c = c;
-        }
-    }
-
-    class Content {
-        public int id;
-
-        public Content(int id) {
-            this.id = id;
-        }
-    }
 
     Payload p = new Payload(new Content(5));
     Payload pn = new Payload(null);
