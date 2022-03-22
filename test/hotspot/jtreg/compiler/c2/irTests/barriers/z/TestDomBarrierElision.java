@@ -32,21 +32,26 @@ import compiler.lib.ir_framework.*;
  * @run driver compiler.c2.irTests.barriers.z.TestDomBarrierElision
  */
 
+class Payload {
+    Content c;
+
+    public Payload(Content c) {
+        this.c = c;
+    }
+
+    public Payload() {
+        // TODO Auto-generated constructor stub
+    }
+}
+
+class Content {
+    int id;
+    public Content(int id) {
+        this.id = id;
+    }
+}
+
 public class TestDomBarrierElision {
-
-    class Payload {
-      Content c;
-      public Payload(Content c) {
-          this.c = c;
-      }
-    }
-
-    class Content {
-        int id;
-        public Content(int id) {
-            this.id = id;
-        }
-    }
 
     Payload p = new Payload(new Content(5));
     Content c1 = new Content(45);
@@ -142,6 +147,29 @@ public class TestDomBarrierElision {
             blackhole(p, t);
         }
         return p.c;
+    }
+
+    @Test
+    @IR(counts = { IRNode.ZLOAD_P_ELIDED,  "1" }, phase = Phase.FINAL_CODE)
+    private static Content testAlloctionDomLoad() {
+        Payload p = new Payload();
+        blackhole(p);
+        return p.c;
+    }
+
+    @Test
+    @IR(counts = { IRNode.ZSTORE_P_ELIDED,  "1" }, phase = Phase.FINAL_CODE)
+    private static void testAlloctionDomStore(Content c) {
+        Payload p = new Payload();
+        blackhole(p);
+        p.c = c;
+    }
+
+    @Run(test = {"testAlloctionDomLoad",
+                 "testAlloctionDomStore"})
+    private void testAllocationDom_runner() {
+        testAlloctionDomLoad();
+        testAlloctionDomStore(c1);
     }
 
     @Run(test = {"testLoadDomShortLoop",
