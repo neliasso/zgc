@@ -559,7 +559,10 @@ static const Node* look_through_node(const Node* node, bool look_through_spill =
 // Check the type if the checkcast node to determine the type of the allocation
 static bool is_array_allocation(const Node* node) {
   precond(node->is_Phi());
-
+  if (!node->raw_out(0)->isa_Mach()) {
+    // Sometimes
+    return true; // true -> skip this allocation
+  }
   MachNode* cc = node->raw_out(0)->as_Mach();
   if (cc->ideal_Opcode() == Op_CheckCastPP) {
     if (cc->get_ptr_type()->isa_aryptr()) {
