@@ -332,7 +332,9 @@ void PhaseOutput::perform_mach_node_analysis() {
   bs->late_barrier_analysis();
 
   pd_perform_mach_node_analysis();
-  C->print_method(CompilerPhaseType::PHASE_MACHANALYSIS, 4);
+  // TODO temporary cahnge to level 1 below
+  // TODO when branch is rebased and tests can use PrintIdealPhase command - this can be reverted
+  C->print_method(CompilerPhaseType::PHASE_MACHANALYSIS, 1);
 }
 
 // Convert Nodes to instruction bits and pass off to the VM

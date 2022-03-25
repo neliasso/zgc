@@ -545,6 +545,10 @@ void MachTypeNode::dump_spec(outputStream *st) const {
   } else {
     st->print(" NULL");
   }
+  uint16_t b = barrier_data();
+  if (b != 0) {
+    st->print(" barrier:%i", b);
+  }
 }
 #endif
 
