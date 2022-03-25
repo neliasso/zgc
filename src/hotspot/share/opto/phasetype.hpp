@@ -57,6 +57,7 @@ enum CompilerPhaseType {
   PHASE_AFTER_BEAUTIFY_LOOPS,
   PHASE_BEFORE_MATCHING,
   PHASE_MATCHING,
+  PHASE_MACHANALYSIS,
   PHASE_INCREMENTAL_INLINE,
   PHASE_INCREMENTAL_INLINE_STEP,
   PHASE_INCREMENTAL_INLINE_CLEANUP,
@@ -108,6 +109,7 @@ class CompilerPhaseTypeHelper {
       case PHASE_AFTER_BEAUTIFY_LOOPS:       return "After beautify loops";
       case PHASE_BEFORE_MATCHING:            return "Before matching";
       case PHASE_MATCHING:                   return "After matching";
+      case PHASE_MACHANALYSIS:               return "After mach analysis";
       case PHASE_INCREMENTAL_INLINE:         return "Incremental Inline";
       case PHASE_INCREMENTAL_INLINE_STEP:    return "Incremental Inline Step";
       case PHASE_INCREMENTAL_INLINE_CLEANUP: return "Incremental Inline Cleanup";

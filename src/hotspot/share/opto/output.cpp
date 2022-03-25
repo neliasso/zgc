@@ -332,21 +332,7 @@ void PhaseOutput::perform_mach_node_analysis() {
   bs->late_barrier_analysis();
 
   pd_perform_mach_node_analysis();
-
-  #ifndef PRODUCT
-  if (C->trace_opto_output()) {
-    ttyLocker ttyl;
-    if (xtty != NULL) {
-    xtty->head("ideal compile_id='%d'%s compile_phase='Print Scheduling'",
-               C->compile_id(),
-               C->is_osr_compilation() ? " compile_kind='osr'" : "");
-    }
-    print_scheduling();
-    if (xtty != NULL) {
-      xtty->tail("ideal");
-    }
-  }
-  #endif
+  C->print_method(CompilerPhaseType::PHASE_MACHANALYSIS, 4);
 }
 
 // Convert Nodes to instruction bits and pass off to the VM
