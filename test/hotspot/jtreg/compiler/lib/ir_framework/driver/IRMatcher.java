@@ -45,6 +45,7 @@ public class IRMatcher {
     private static final Pattern IR_ENCODING_PATTERN =
             Pattern.compile("(?<=" + IREncodingPrinter.START + "\r?\n)[\\s\\S]*(?=" + IREncodingPrinter.END + ")");
     private static final Pattern COMPILE_ID_PATTERN = Pattern.compile("compile_id='(\\d+)'");
+    private static final Pattern COMPILE_PHASE_PATTERN = Pattern.compile("compile_phase='([a-zA-Z0-9 ]+)'");
 
     private final Map<String, IRMethod> compilations;
     private final Class<?> testClass;
@@ -85,7 +86,7 @@ public class IRMatcher {
             if (irAnnos.length > 0) {
                 // Validation of legal @IR attributes and placement of the annotation was already done in Test VM.
                 int[] ids = irRulesMap.get(m.getName());
-                TestFramework.check(ids != null, "Should find method name in validIrRulesMap for " + m);
+                TestFramework.check(ids != null, "Should find method name in irRulesMap for " + m);
                 TestFramework.check(ids.length > 0, "Did not find any rule indices for " + m);
                 TestFramework.check(ids[ids.length - 1] < irAnnos.length, "Invalid IR rule index found in validIrRulesMap for " + m);
                 if (ids[0] != IREncodingPrinter.NO_RULE_APPLIED) {
@@ -133,14 +134,16 @@ public class IRMatcher {
     private void parseHotspotPidFile() {
         Map<Integer, String> compileIdMap = new HashMap<>();
         try (var br = Files.newBufferedReader(Paths.get(hotspotPidFileName))) {
+            Phase phase = null;
             String line;
             StringBuilder builder = new StringBuilder();
             boolean append = false;
             String currentMethod = "";
             while ((line = br.readLine()) != null) {
                 if (append && line.startsWith("</")) {
-                    flushOutput(line, builder, currentMethod);
+                    flushOutput(line, builder, currentMethod, phase);
                     append = false;
+                    phase = null;
                     currentMethod = "";
                     continue;
                 } else if (append) {
@@ -152,6 +155,7 @@ public class IRMatcher {
                     addTestMethodCompileId(compileIdMap, line);
                 } else if (isPrintIdealStart(line)) {
                     String methodName = getMethodName(compileIdMap, line);
+                    phase = getPhase(line);
                     if (methodName != null) {
                         currentMethod = methodName;
                         append = true; // Append all following lines until we hit the closing </ideal> tag.
@@ -173,12 +177,12 @@ public class IRMatcher {
     /**
      * Write the input to the IR method and reset the builder.
      */
-    private void flushOutput(String line, StringBuilder builder, String currentMethod) {
+    private void flushOutput(String line, StringBuilder builder, String currentMethod, Phase phase) {
         TestFramework.check(!currentMethod.isEmpty(), "current method must be set");
         IRMethod irMethod = compilations.get(currentMethod);
-        if (line.startsWith("</i")) {
+        if (phase != null) {
             // PrintIdeal
-            irMethod.setIdealOutput(builder.toString());
+            irMethod.setIdealOutput(builder.toString(), phase);
         } else {
             // PrintOptoAssembly
             irMethod.setOptoAssemblyOutput(builder.toString());
@@ -263,6 +267,17 @@ public class IRMatcher {
         return compileIdMap.get(compileId);
     }
 
+    private Phase getPhase(String line) {
+        Matcher matcher = COMPILE_PHASE_PATTERN.matcher(line);
+        matcher.find();
+        try {
+            String phaseName = matcher.group(1);
+            return Phase.valueOfTag(phaseName);
+        } catch (java.lang.IllegalStateException e) {
+            throw new Error("Error found no match: " + line + " count: " + matcher.groupCount());
+        }
+    }
+
     /**
      * Do an IR matching of all methods with appliable @IR rules fetched during parsing of the hotspot pid file.
      */
@@ -274,18 +289,19 @@ public class IRMatcher {
     private void applyRulesForMethod(IRMethod irMethod) {
         this.irMethod = irMethod;
         method = irMethod.getMethod();
-        String testOutput = irMethod.getOutput();
-        if (testOutput.isEmpty()) {
-            String msg = "Method was not compiled. Did you specify any compiler directives preventing a compilation or used a " +
-                         "@Run method in STANDALONE mode? In the latter case, make sure to always trigger a C2 compilation " +
-                         "by invoking the test enough times.";
-            fails.computeIfAbsent(method, k -> new ArrayList<>()).add(msg);
-            return;
-        }
-
-        if (TestFramework.VERBOSE) {
-            System.out.println("Output of " + method + ":");
-            System.out.println(testOutput);
+        for (Phase phase : irMethod.getPhases()) {
+            String testOutput = irMethod.getOutput(phase);
+            if (testOutput.isEmpty()) {
+                String msg = "Method was not compiled for phase " + phase.name() + ". Did you specify any compiler directives preventing a compilation or used a " +
+                             "@Run method in STANDALONE mode? In the latter case, make sure to always trigger a C2 compilation " +
+                             "by invoking the test enough times.";
+                fails.computeIfAbsent(method, k -> new ArrayList<>()).add(msg);
+                return;
+            }
+            if (TestFramework.VERBOSE) {
+                System.out.println("Output of " + method + " of phase " + phase.name() + ":");
+                System.out.println(testOutput);
+            }
         }
         Arrays.stream(irMethod.getRuleIds()).forEach(this::applyIRRule);
     }
@@ -316,7 +332,7 @@ public class IRMatcher {
         if (irAnno.failOn().length != 0) {
             String failOnRegex = String.join("|", IRNode.mergeNodes(irAnno.failOn()));
             Pattern pattern = Pattern.compile(failOnRegex);
-            Matcher matcher = pattern.matcher(irMethod.getOutput());
+            Matcher matcher = pattern.matcher(irMethod.getOutput(irAnno.phase()));
             long matchCount = matcher.results().count();
             if (matchCount > 0) {
                 addFailOnFailsForOutput(failMsg, pattern, matchCount);
@@ -329,15 +345,15 @@ public class IRMatcher {
      * to the user.
      */
     private void addFailOnFailsForOutput(StringBuilder failMsg, Pattern pattern, long matchCount) {
-        long idealCount = pattern.matcher(irMethod.getIdealOutput()).results().count();
+        long idealCount = pattern.matcher(irMethod.getIdealOutput(irAnno.phase())).results().count();
         long optoAssemblyCount = pattern.matcher(irMethod.getOptoAssemblyOutput()).results().count();
         if (matchCount != idealCount + optoAssemblyCount || (idealCount != 0 && optoAssemblyCount != 0)) {
             // Report with Ideal and Opto Assembly
-            addFailOnFailsForOutput(failMsg, irMethod.getOutput());
+            addFailOnFailsForOutput(failMsg, irMethod.getOutput(irAnno.phase()));
             irMethod.needsAllOutput();
         } else if (optoAssemblyCount == 0) {
             // Report with Ideal only
-            addFailOnFailsForOutput(failMsg, irMethod.getIdealOutput());
+            addFailOnFailsForOutput(failMsg, irMethod.getIdealOutput(irAnno.phase()));
             irMethod.needsIdeal();
         } else {
             // Report with Opto Assembly only
@@ -376,7 +392,7 @@ public class IRMatcher {
     private void applyCounts(StringBuilder failMsg) {
         if (irAnno.counts().length != 0) {
             boolean hasFails = false;
-            String testOutput = irMethod.getOutput();
+            String testOutput = irMethod.getOutput(irAnno.phase());
             int countsId = 1;
             final List<String> nodesWithCount = IRNode.mergeNodes(irAnno.counts());
             for (int i = 0; i < nodesWithCount.size(); i += 2) {
@@ -428,8 +444,8 @@ public class IRMatcher {
         failMsg.append("    Expected ").append(expectedCount).append(" but found ").append(actualCount);
 
         if (actualCount > 0) {
-            Matcher matcher = pattern.matcher(irMethod.getOutput());
-            long idealCount = pattern.matcher(irMethod.getIdealOutput()).results().count();
+            Matcher matcher = pattern.matcher(irMethod.getOutput(irAnno.phase()));
+            long idealCount = pattern.matcher(irMethod.getIdealOutput(irAnno.phase())).results().count();
             long optoAssemblyCount = pattern.matcher(irMethod.getOptoAssemblyOutput()).results().count();
             if (actualCount != idealCount + optoAssemblyCount || (idealCount != 0 && optoAssemblyCount != 0)) {
                 irMethod.needsAllOutput();
@@ -465,9 +481,17 @@ public class IRMatcher {
                 IRMethod irMethod = compilations.get(method.getName());
                 String output;
                 if (irMethod.usesIdeal() && irMethod.usesOptoAssembly()) {
-                    output = irMethod.getOutput();
+                    StringBuilder idealBuilder = new StringBuilder();
+                    for (Phase phase : irMethod.getPhases()) {
+                        idealBuilder.append(System.lineSeparator()).append(irMethod.getOutput(phase));
+                    }
+                    output = idealBuilder.toString();
                 } else if (irMethod.usesIdeal()) {
-                    output = irMethod.getIdealOutput();
+                    StringBuilder idealBuilder = new StringBuilder();
+                    for (Phase phase : irMethod.getPhases()) {
+                        idealBuilder.append(System.lineSeparator()).append(irMethod.getIdealOutput(phase));
+                    }
+                    output = idealBuilder.toString();
                 } else if (irMethod.usesOptoAssembly()) {
                     output = irMethod.getOptoAssemblyOutput();
                 } else {

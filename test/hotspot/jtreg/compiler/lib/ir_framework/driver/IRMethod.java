@@ -24,8 +24,12 @@
 package compiler.lib.ir_framework.driver;
 
 import compiler.lib.ir_framework.IR;
+import compiler.lib.ir_framework.Phase;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Helper class to store information about a method that needs to be IR matched.
@@ -35,8 +39,9 @@ class IRMethod {
     private final int[] ruleIds;
     private final IR[] irAnnos;
     private final StringBuilder outputBuilder;
-    private String output;
-    private String idealOutput;
+    private final Map<Phase, String> output;
+    private final Map<Phase, String> idealOutput;
+
     private String optoAssemblyOutput;
     private boolean needsIdeal;
     private boolean needsOptoAssembly;
@@ -46,8 +51,8 @@ class IRMethod {
         this.ruleIds = ruleIds;
         this.irAnnos = irAnnos;
         this.outputBuilder = new StringBuilder();
-        this.output = "";
-        this.idealOutput = "";
+        this.output = new HashMap<>();
+        this.idealOutput = new HashMap<>();
         this.optoAssemblyOutput = "";
     }
 
@@ -67,10 +72,8 @@ class IRMethod {
      * The Ideal output comes always before the Opto Assembly output. We might parse multiple C2 compilations of this method.
      * Only keep the very last one by overriding 'output'.
      */
-    public void setIdealOutput(String idealOutput) {
-        outputBuilder.setLength(0);
-        this.idealOutput = "PrintIdeal:" + System.lineSeparator() + idealOutput;
-        outputBuilder.append(this.idealOutput);
+    public void setIdealOutput(String idealOutput, Phase phase) {
+        this.idealOutput.put(phase, "PrintIdeal - " + phase.name() + ":" + System.lineSeparator() + idealOutput);
     }
 
     /**
@@ -78,16 +81,22 @@ class IRMethod {
      */
     public void setOptoAssemblyOutput(String optoAssemblyOutput) {
         this.optoAssemblyOutput = "PrintOptoAssembly:" + System.lineSeparator() + optoAssemblyOutput;
-        outputBuilder.append(System.lineSeparator()).append(System.lineSeparator()).append(this.optoAssemblyOutput);
-        output = outputBuilder.toString();
     }
 
-    public String getOutput() {
-        return output;
+    public Set<Phase> getPhases() {
+        return output.keySet();
     }
 
-    public String getIdealOutput() {
-        return idealOutput;
+    public String getOutput(Phase phase) {
+        if (output.isEmpty()) {
+            // Initialize output strings
+            idealOutput.forEach((p, ideal) -> output.put(p, ideal + System.lineSeparator() + System.lineSeparator() + this.optoAssemblyOutput));
+        }
+        return output.getOrDefault(phase, "");
+    }
+
+    public String getIdealOutput(Phase phase) {
+        return idealOutput.get(phase);
     }
 
     public String getOptoAssemblyOutput() {
